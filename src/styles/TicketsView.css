@@ -68,7 +68,23 @@ tbody tr:last-child td { border-bottom: none; }
   max-width: 0;       /* force text-overflow dans flex */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.td-date { color: var(--text-secondary); font-size: 0.78rem; white-space: nowrap; }
+.td-date   { color: var(--text-secondary); font-size: 0.78rem; white-space: nowrap; }
+.td-action { width: 40px; text-align: center; }
+
+.btn-row-edit {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-muted); cursor: pointer;
+  transition: all var(--transition);
+  opacity: 0;
+}
+.ticket-row:hover .btn-row-edit { opacity: 1; }
+.btn-row-edit:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
 
 .ticket-id {
   font-family: 'ui-monospace', monospace;
@@ -334,6 +350,25 @@ tbody tr:last-child td { border-bottom: none; }
 .form-select:focus   { border-color: var(--accent); }
 .form-textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
 .form-select   { cursor: pointer; }
+
+.form-input-with-unit {
+  display: flex; align-items: center;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-surface); overflow: hidden;
+  transition: border-color var(--transition);
+}
+.form-input-with-unit:focus-within { border-color: var(--accent); }
+.form-input-with-unit .form-input {
+  border: none; flex: 1;
+  border-radius: 0;
+}
+.form-input-with-unit .form-input:focus { outline: none; }
+.form-unit {
+  padding: 0 10px; font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted); background: var(--bg-elevated);
+  border-left: 1px solid var(--border);
+  height: 100%; display: flex; align-items: center;
+}
 
 .form-error {
   display: flex; align-items: center; gap: 7px;

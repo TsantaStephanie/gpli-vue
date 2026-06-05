@@ -102,6 +102,7 @@
                 <th>Statut</th>
                 <th>Priorité</th>
                 <th>Date</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -133,6 +134,18 @@
                   </div>
                 </td>
                 <td class="td-date">{{ formatDate(ticket.createdAt) }}</td>
+                <td class="td-action">
+                  <button
+                    class="btn-row-edit"
+                    title="Modifier"
+                    @click.stop="openEdit(ticket)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -202,6 +215,10 @@
                 <span class="fiche-meta-label">Échéance SLA</span>
                 <span class="fiche-meta-value">{{ formatDate(selectedTicket.timeToResolve) }}</span>
               </div>
+              <div v-if="selectedTicket.actiontime" class="fiche-meta-item">
+                <span class="fiche-meta-label">Durée totale</span>
+                <span class="fiche-meta-value">{{ formatDuration(selectedTicket.actiontime) }}</span>
+              </div>
             </div>
 
             <!-- Description -->
@@ -260,8 +277,8 @@
                 </svg>
               </div>
               <div>
-                <h2 class="modal-title">Nouveau ticket</h2>
-                <p class="modal-subtitle">Créer un ticket via l'API GLPI</p>
+                <h2 class="modal-title">{{ editId !== null ? 'Modifier le ticket' : 'Nouveau ticket' }}</h2>
+                <p class="modal-subtitle">{{ editId !== null ? `Ticket #${editId}` : 'Créer un ticket via l\'API GLPI' }}</p>
               </div>
               <button class="modal-close" @click="closeModal">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -298,7 +315,7 @@
                 />
               </div>
 
-              <!-- Type + Priorité côte à côte -->
+              <!-- Type + Statut côte à côte -->
               <div class="form-row">
                 <div class="form-field">
                   <label class="form-label">Type</label>
@@ -307,6 +324,21 @@
                     <option :value="2">Demande</option>
                   </select>
                 </div>
+                <div class="form-field">
+                  <label class="form-label">Statut</label>
+                  <select v-model="form.status" class="form-select">
+                    <option :value="1">Nouveau</option>
+                    <option :value="2">En cours (assigné)</option>
+                    <option :value="3">En cours (planifié)</option>
+                    <option :value="4">En attente</option>
+                    <option :value="5">Résolu</option>
+                    <option :value="6">Fermé</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Priorité + Durée côte à côte -->
+              <div class="form-row">
                 <div class="form-field">
                   <label class="form-label">Priorité</label>
                   <select v-model="form.priority" class="form-select">
@@ -317,6 +349,20 @@
                     <option :value="5">Très haute</option>
                     <option :value="6">Majeure</option>
                   </select>
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Durée totale (heures)</label>
+                  <div class="form-input-with-unit">
+                    <input
+                      v-model.number="form.actiontimeHours"
+                      class="form-input"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      placeholder="0"
+                    />
+                    <span class="form-unit">h</span>
+                  </div>
                 </div>
               </div>
 
@@ -335,7 +381,7 @@
                   <svg v-if="creating" class="spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
                   </svg>
-                  {{ creating ? 'Création…' : 'Créer le ticket' }}
+                  {{ creating ? 'Sauvegarde…' : editId !== null ? 'Enregistrer' : 'Créer le ticket' }}
                 </button>
               </div>
 
@@ -355,6 +401,7 @@ import {
   fetchTicketById,
   fetchTicketFollowups,
   createTicket,
+  updateTicket,
   type Followup,
 } from '@/services/api/ticketService'
 import type { Ticket, TicketStatus, TicketPriority } from '@/models/Ticket'
@@ -369,11 +416,18 @@ const followups    = ref<Followup[]>([])
 const activeStatus = ref('all')
 const searchQuery  = ref('')
 
-// ─── Modal création ───────────────────────────────────────────────────────────
-const showModal  = ref(false)
-const creating   = ref(false)
+// ─── Modal création / modification ───────────────────────────────────────────
+const showModal   = ref(false)
+const creating    = ref(false)
 const createError = ref('')
-const form = ref({ name: '', content: '', type: 1 as 1 | 2, priority: 3 })
+const editId      = ref<number | null>(null)
+const form = ref({
+  name: '', content: '',
+  type: 1 as 1 | 2,
+  status: 1 as TicketStatus,
+  priority: 3,
+  actiontimeHours: 0,
+})
 
 const statuses = [
   { key: 'all',    label: 'Tous' },
@@ -450,7 +504,22 @@ function closeFiche() {
 
 // ─── Modal création ───────────────────────────────────────────────────────────
 function openModal() {
-  form.value    = { name: '', content: '', type: 1, priority: 3 }
+  editId.value  = null
+  form.value    = { name: '', content: '', type: 1, status: 1, priority: 3, actiontimeHours: 0 }
+  createError.value = ''
+  showModal.value = true
+}
+
+function openEdit(ticket: Ticket) {
+  editId.value = ticket.id
+  form.value = {
+    name:             ticket.title,
+    content:          cleanHtml(ticket.description),
+    type:             ticket.type,
+    status:           ticket.status,
+    priority:         ticket.priority,
+    actiontimeHours:  ticket.actiontime ? +(ticket.actiontime / 3600).toFixed(2) : 0,
+  }
   createError.value = ''
   showModal.value = true
 }
@@ -465,18 +534,30 @@ async function submitTicket() {
   creating.value    = true
   createError.value = ''
   try {
-    const { id } = await createTicket({
-      name:     form.value.name.trim(),
-      content:  form.value.content.trim(),
-      type:     form.value.type,
-      priority: form.value.priority,
-      urgency:  form.value.priority,   // même valeur par défaut
-    })
-    showModal.value = false
-    await load()
-    await openFiche(id)
+    const payload = {
+      name:       form.value.name.trim(),
+      content:    form.value.content.trim(),
+      type:       form.value.type,
+      status:     form.value.status,
+      priority:   form.value.priority,
+      urgency:    form.value.priority,
+      actiontime: Math.round((form.value.actiontimeHours || 0) * 3600),
+    }
+
+    if (editId.value !== null) {
+      await updateTicket(editId.value, payload)
+      showModal.value = false
+      const id = editId.value
+      await load()
+      await openFiche(id)
+    } else {
+      const { id } = await createTicket(payload)
+      showModal.value = false
+      await load()
+      await openFiche(id)
+    }
   } catch (e: unknown) {
-    createError.value = e instanceof Error ? e.message : 'Erreur lors de la création'
+    createError.value = e instanceof Error ? e.message : 'Erreur lors de la sauvegarde'
   } finally {
     creating.value = false
   }
@@ -496,6 +577,15 @@ function formatDateTime(d?: string): string {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '—'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h === 0) return `${m} min`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}min`
 }
 
 function cleanHtml(html: string): string {

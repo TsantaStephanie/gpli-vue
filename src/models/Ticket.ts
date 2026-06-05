@@ -61,6 +61,7 @@ export interface GlpiTicket {
   users_id_recipient?: number;  // demandeur
   users_id_lastupdater?: number;
   is_deleted: number;
+  actiontime?: number;        // durée totale en secondes
   date?: string;              // date de création
   date_mod?: string;
   solvedate?: string;
@@ -84,6 +85,7 @@ export interface Ticket {
   locationId?: number;
   categoryId?: number;
   requesterId?: number;       // utilisateur demandeur
+  actiontime?: number;        // durée totale en secondes
   isDeleted: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -109,6 +111,7 @@ export function mapGlpiTicketToTicket(raw: GlpiTicket): Ticket {
     locationId: raw.locations_id,
     categoryId: raw.itilcategories_id,
     requesterId: raw.users_id_recipient,
+    actiontime: raw.actiontime,
     isDeleted: raw.is_deleted === 1,
     createdAt: raw.date,
     updatedAt: raw.date_mod,

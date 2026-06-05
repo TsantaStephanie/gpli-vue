@@ -117,9 +117,11 @@ export async function fetchTicketFollowups(ticketId: number): Promise<Followup[]
 export interface CreateTicketPayload {
   name: string;
   content: string;
-  type?: 1 | 2;         // 1=Incident, 2=Demande
-  priority?: number;    // 1–6
-  urgency?: number;     // 1–6
+  type?: 1 | 2;           // 1=Incident, 2=Demande
+  status?: TicketStatus;  // statut initial
+  priority?: number;      // 1–6
+  urgency?: number;       // 1–6
+  actiontime?: number;    // durée en secondes
   entitiesId?: number;
   itilcategoriesId?: number;
   usersIdRecipient?: number;
@@ -129,15 +131,38 @@ export async function createTicket(payload: CreateTicketPayload): Promise<{ id: 
   const { default: glpiClient } = await import('./glpiClient');
   const { data } = await glpiClient.post<{ id: number }>(GLPI_ENDPOINTS.TICKET, {
     input: {
-      name: payload.name,
-      content: payload.content,
-      type: payload.type ?? 1,
-      priority: payload.priority ?? 3,
-      urgency: payload.urgency ?? 3,
-      entities_id: payload.entitiesId ?? 0,
-      itilcategories_id: payload.itilcategoriesId,
+      name:               payload.name,
+      content:            payload.content,
+      type:               payload.type ?? 1,
+      status:             payload.status ?? 1,
+      priority:           payload.priority ?? 3,
+      urgency:            payload.urgency ?? 3,
+      actiontime:         payload.actiontime ?? 0,
+      entities_id:        payload.entitiesId ?? 0,
+      itilcategories_id:  payload.itilcategoriesId,
       users_id_recipient: payload.usersIdRecipient,
     },
   });
   return data;
+}
+
+// ─── Modifier un ticket ───────────────────────────────────────────────────────
+
+export async function updateTicket(
+  id: number,
+  payload: Partial<CreateTicketPayload>,
+): Promise<void> {
+  const { default: glpiClient } = await import('./glpiClient');
+  await glpiClient.put(`${GLPI_ENDPOINTS.TICKET}/${id}`, {
+    input: {
+      id,
+      ...(payload.name       !== undefined && { name:       payload.name }),
+      ...(payload.content    !== undefined && { content:    payload.content }),
+      ...(payload.type       !== undefined && { type:       payload.type }),
+      ...(payload.status     !== undefined && { status:     payload.status }),
+      ...(payload.priority   !== undefined && { priority:   payload.priority }),
+      ...(payload.urgency    !== undefined && { urgency:    payload.urgency }),
+      ...(payload.actiontime !== undefined && { actiontime: payload.actiontime }),
+    },
+  });
 }
