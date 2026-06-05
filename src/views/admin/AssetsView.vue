@@ -76,5 +76,5 @@ async function load() {
 </script>
 
 <style scoped>
-@import '../styles/module.css';
+@import '../../styles/module.css';
 </style>

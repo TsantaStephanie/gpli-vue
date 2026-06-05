@@ -52,4 +52,4 @@ const fields = [
 ]
 async function load() { loading.value = true; await new Promise(r => setTimeout(r, 1000)); loading.value = false }
 </script>
-<style scoped>@import '../styles/module.css';</style>
+<style scoped>@import '../../styles/module.css';</style>

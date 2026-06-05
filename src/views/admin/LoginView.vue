@@ -14,8 +14,7 @@
           </svg>
         </div>
         <div class="login-brand-block">
-          <span class="login-brand-name">DeskFlow</span>
-          <span class="login-brand-tag">ITSM</span>
+          <span class="login-brand-name">GLPI</span>
         </div>
       </div>
 
@@ -98,5 +97,5 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-@import '../styles/LoginView.css';
+@import '../../styles/LoginView.css';
 </style>

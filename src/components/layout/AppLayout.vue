@@ -16,7 +16,7 @@
             </svg>
           </button>
           <div class="breadcrumb">
-            <span class="bc-root">DeskFlow</span>
+            <span class="bc-root">GLPI</span>
             <svg class="bc-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="9 18 15 12 9 6"/>
             </svg>

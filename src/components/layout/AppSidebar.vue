@@ -13,8 +13,7 @@
       </div>
       <Transition name="label">
         <div v-if="!collapsed" class="brand-text">
-          <span class="brand-name">DeskFlow</span>
-          <span class="brand-tag">ITSM</span>
+          <span class="brand-name">GLPI</span>
         </div>
       </Transition>
     </div>
@@ -49,6 +48,25 @@
         </Transition>
         <RouterLink
           v-for="item in orgNav"
+          :key="item.to"
+          :to="item.to"
+          class="nav-item"
+          :class="{ active: isActive(item.to) }"
+          :title="collapsed ? item.label : ''"
+        >
+          <span class="nav-icon" v-html="item.icon" />
+          <Transition name="label">
+            <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
+          </Transition>
+        </RouterLink>
+      </div>
+
+      <div class="nav-section">
+        <Transition name="label">
+          <p v-if="!collapsed" class="nav-section-label">Configuration</p>
+        </Transition>
+        <RouterLink
+          v-for="item in configNav"
           :key="item.to"
           :to="item.to"
           class="nav-item"
@@ -108,6 +126,11 @@ const orgNav = [
   { to: '/users',     label: 'Utilisateurs',  icon: icons.users },
   { to: '/entities',  label: 'Entités',       icon: icons.entities },
   { to: '/locations', label: 'Localisations', icon: icons.locations },
+]
+
+const configNav = [
+  { to: '/settings', label: 'Tables & Données', icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>` },
+  { to: '/reset',    label: 'Réinitialisation', icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4h6v2"/></svg>` },
 ]
 </script>
 

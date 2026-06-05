@@ -149,5 +149,5 @@ onMounted(load)
 </script>
 
 <style scoped>
-@import '../styles/TicketsView.css';
+@import '../../styles/TicketsView.css';
 </style>
