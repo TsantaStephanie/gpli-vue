@@ -119,7 +119,7 @@ const icons = {
 const mainNav = [
   { to: '/dashboard', label: 'Vue d\'ensemble',  icon: icons.dashboard },
   { to: '/assets',    label: 'Parc matériel',    icon: icons.assets,  count: null },
-  { to: '/tickets',   label: 'Incidents',        icon: icons.tickets, count: null },
+  { to: '/tickets',   label: 'Tickets',          icon: icons.tickets, count: null },
 ]
 
 const orgNav = [

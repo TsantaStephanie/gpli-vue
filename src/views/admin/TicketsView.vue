@@ -1,77 +1,380 @@
 <template>
-  <div class="module-view animate-in">
-    <div class="mv-header">
+  <div class="tickets-view animate-in">
+
+    <!-- ─── Header ──────────────────────────────────────────────────────────── -->
+    <div class="tv-header">
       <div class="mv-title-wrap">
         <div class="mv-icon icon-orange">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+            <rect x="9" y="3" width="6" height="4" rx="1"/>
+            <line x1="9" y1="12" x2="15" y2="12"/>
+            <line x1="9" y1="16" x2="12" y2="16"/>
+          </svg>
         </div>
         <div>
           <h1 class="mv-title">Tickets</h1>
-          <p class="mv-sub">Support & Helpdesk — <code>GET /Ticket</code></p>
+          <p class="mv-sub">{{ filteredTickets.length }} ticket{{ filteredTickets.length !== 1 ? 's' : '' }}</p>
         </div>
       </div>
       <div class="mv-actions">
+        <div class="tv-search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            v-model="searchQuery"
+            class="tv-search-input"
+            placeholder="Rechercher un ticket…"
+          />
+        </div>
         <div class="filter-tabs">
-          <button v-for="s in statuses" :key="s.key" class="tab" :class="{ active: activeStatus === s.key }" @click="activeStatus = s.key">{{ s.label }}</button>
+          <button
+            v-for="s in statuses"
+            :key="s.key"
+            class="tab"
+            :class="{ active: activeStatus === s.key }"
+            @click="activeStatus = s.key"
+          >{{ s.label }}</button>
         </div>
         <button class="btn-fetch btn-orange" @click="load" :disabled="loading">
-          <svg v-if="loading" class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          {{ loading ? 'Chargement...' : 'Recharger' }}
+          <svg v-if="loading" class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+          </svg>
+          {{ loading ? 'Chargement…' : 'Recharger' }}
+        </button>
+        <button class="btn-fetch btn-new-ticket" @click="openModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Nouveau ticket
         </button>
       </div>
     </div>
 
-    <!-- Tableau des tickets -->
-    <div v-if="tickets.length > 0" class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Titre</th>
-            <th>Statut</th>
-            <th>Dernière modification</th>
-            <th>Date d'ouverture</th>
-            <th>Priorité</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="ticket in tickets" :key="ticket.id">
-            <td class="ticket-title-cell">
-              <span class="ticket-id">#{{ ticket.id }}</span>
-              <span>{{ ticket.title }}</span>
-            </td>
-            <td><span :class="['badge', statusClass(ticket.status)]">{{ statusLabel(ticket.status) }}</span></td>
-            <td>{{ formatDate(ticket.updatedAt) }}</td>
-            <td>{{ formatDate(ticket.createdAt) }}</td>
-            <td>
-              <div class="priority-cell">
-                <span :class="['priority-dot', priorityClass(ticket.priority)]"></span>
-                {{ priorityLabel(ticket.priority) }}
+    <!-- ─── Content : liste + fiche ──────────────────────────────────────────── -->
+    <div class="tv-content">
+
+      <!-- ─── Liste des tickets ──────────────────────────────────────────────── -->
+      <div class="tv-list-pane">
+
+        <!-- Skeletons -->
+        <div v-if="loading && tickets.length === 0" class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Titre</th><th>Type</th><th>Statut</th><th>Priorité</th><th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="i in 8" :key="i">
+                <td><span class="skel skel-id" /></td>
+                <td><span class="skel skel-title" /></td>
+                <td><span class="skel skel-badge" /></td>
+                <td><span class="skel skel-badge" /></td>
+                <td><span class="skel skel-badge" /></td>
+                <td><span class="skel skel-date" /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Vide -->
+        <div v-else-if="filteredTickets.length === 0 && !loading" class="empty-module">
+          <div class="em-icon icon-orange">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+              <rect x="9" y="3" width="6" height="4" rx="1"/>
+            </svg>
+          </div>
+          <h2>Aucun ticket trouvé</h2>
+          <p>{{ tickets.length > 0 ? 'Aucun résultat pour ce filtre.' : 'Cliquez sur "Recharger" pour récupérer les tickets.' }}</p>
+        </div>
+
+        <!-- Tableau -->
+        <div v-else class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Titre</th>
+                <th>Type</th>
+                <th>Statut</th>
+                <th>Priorité</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="ticket in filteredTickets"
+                :key="ticket.id"
+                class="ticket-row"
+                :class="{ 'row-selected': ticket.id === selectedId }"
+                @click="openFiche(ticket.id)"
+              >
+                <td class="td-id">
+                  <span class="ticket-id">#{{ ticket.id }}</span>
+                </td>
+                <td class="td-title">{{ ticket.title }}</td>
+                <td>
+                  <span :class="['badge', ticket.type === 1 ? 'badge-orange' : 'badge-blue']">
+                    {{ ticket.type === 1 ? 'Incident' : 'Demande' }}
+                  </span>
+                </td>
+                <td>
+                  <span :class="['badge', statusClass(ticket.status)]">
+                    {{ statusLabel(ticket.status) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="priority-cell">
+                    <span :class="['priority-dot', priorityClass(ticket.priority)]" />
+                    {{ ticket.priorityLabel }}
+                  </div>
+                </td>
+                <td class="td-date">{{ formatDate(ticket.createdAt) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ─── Fiche détail ────────────────────────────────────────────────────── -->
+      <Transition name="fiche-slide">
+        <div v-if="selectedId !== null" class="tv-fiche-pane">
+
+          <!-- En-tête de la fiche -->
+          <div class="fiche-head">
+            <span class="fiche-head-id">#{{ selectedId }}</span>
+            <button class="fiche-close-btn" @click="closeFiche" title="Fermer la fiche">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Chargement de la fiche -->
+          <div v-if="ficheLoading" class="fiche-loading">
+            <div class="fiche-skel-title" />
+            <div class="fiche-skel-badges" />
+            <div class="fiche-skel-block" />
+            <div class="fiche-skel-block small" />
+          </div>
+
+          <!-- Contenu de la fiche -->
+          <template v-else-if="selectedTicket">
+
+            <!-- Titre + badges -->
+            <div class="fiche-title-section">
+              <h2 class="fiche-title">{{ selectedTicket.title }}</h2>
+              <div class="fiche-badges">
+                <span :class="['badge', statusClass(selectedTicket.status)]">
+                  {{ statusLabel(selectedTicket.status) }}
+                </span>
+                <span :class="['badge', selectedTicket.type === 1 ? 'badge-orange' : 'badge-blue']">
+                  {{ selectedTicket.type === 1 ? 'Incident' : 'Demande' }}
+                </span>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+
+            <!-- Méta-données -->
+            <div class="fiche-meta-grid">
+              <div class="fiche-meta-item">
+                <span class="fiche-meta-label">Priorité</span>
+                <div class="priority-cell">
+                  <span :class="['priority-dot', priorityClass(selectedTicket.priority)]" />
+                  <span class="fiche-meta-value">{{ selectedTicket.priorityLabel }}</span>
+                </div>
+              </div>
+              <div class="fiche-meta-item">
+                <span class="fiche-meta-label">Ouvert le</span>
+                <span class="fiche-meta-value">{{ formatDate(selectedTicket.createdAt) }}</span>
+              </div>
+              <div v-if="selectedTicket.updatedAt" class="fiche-meta-item">
+                <span class="fiche-meta-label">Modifié le</span>
+                <span class="fiche-meta-value">{{ formatDate(selectedTicket.updatedAt) }}</span>
+              </div>
+              <div v-if="selectedTicket.solvedAt" class="fiche-meta-item">
+                <span class="fiche-meta-label">Résolu le</span>
+                <span class="fiche-meta-value">{{ formatDate(selectedTicket.solvedAt) }}</span>
+              </div>
+              <div v-if="selectedTicket.timeToResolve" class="fiche-meta-item">
+                <span class="fiche-meta-label">Échéance SLA</span>
+                <span class="fiche-meta-value">{{ formatDate(selectedTicket.timeToResolve) }}</span>
+              </div>
+            </div>
+
+            <!-- Description -->
+            <div v-if="cleanDescription" class="fiche-section">
+              <p class="fiche-section-title">Description</p>
+              <div class="fiche-description">{{ cleanDescription }}</div>
+            </div>
+
+            <!-- Suivis -->
+            <div class="fiche-section">
+              <p class="fiche-section-title">
+                Suivis
+                <span class="fiche-count">{{ followups.length }}</span>
+              </p>
+              <div v-if="followups.length === 0" class="fiche-no-followups">
+                Aucun suivi enregistré pour ce ticket.
+              </div>
+              <div v-else class="fiche-followups-list">
+                <div v-for="f in followups" :key="f.id" class="followup-item">
+                  <div class="followup-meta">
+                    <span class="followup-user">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                      </svg>
+                      Utilisateur {{ f.userId }}
+                    </span>
+                    <span class="followup-date">{{ formatDateTime(f.date) }}</span>
+                    <span v-if="f.isPrivate" class="followup-private-badge">Privé</span>
+                  </div>
+                  <div class="followup-content">{{ cleanHtml(f.content) }}</div>
+                </div>
+              </div>
+            </div>
+
+          </template>
+        </div>
+      </Transition>
+
     </div>
 
-    <!-- État vide -->
-    <div v-else class="empty-module">
-      <div class="em-icon icon-orange">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      </div>
-      <h2>{{ loading ? 'Chargement des tickets...' : 'Aucun ticket trouvé' }}</h2>
-      <p v-if="!loading">Cliquez sur "Recharger" pour essayer à nouveau ou vérifiez les filtres.</p>
-    </div>
+    <!-- ─── Modal nouveau ticket ──────────────────────────────────────────────── -->
+    <Teleport to="body">
+      <Transition name="modal-fade">
+        <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+          <div class="modal-box">
+
+            <!-- Header -->
+            <div class="modal-header">
+              <div class="modal-header-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                  <rect x="9" y="3" width="6" height="4" rx="1"/>
+                  <line x1="9" y1="12" x2="15" y2="12"/>
+                  <line x1="9" y1="16" x2="12" y2="16"/>
+                </svg>
+              </div>
+              <div>
+                <h2 class="modal-title">Nouveau ticket</h2>
+                <p class="modal-subtitle">Créer un ticket via l'API GLPI</p>
+              </div>
+              <button class="modal-close" @click="closeModal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Formulaire -->
+            <form @submit.prevent="submitTicket" class="modal-form">
+
+              <!-- Titre -->
+              <div class="form-field">
+                <label class="form-label">Titre <span class="form-required">*</span></label>
+                <input
+                  v-model="form.name"
+                  class="form-input"
+                  type="text"
+                  placeholder="Titre du ticket"
+                  required
+                  autofocus
+                />
+              </div>
+
+              <!-- Description -->
+              <div class="form-field">
+                <label class="form-label">Description <span class="form-required">*</span></label>
+                <textarea
+                  v-model="form.content"
+                  class="form-textarea"
+                  placeholder="Décrivez le problème ou la demande…"
+                  rows="4"
+                  required
+                />
+              </div>
+
+              <!-- Type + Priorité côte à côte -->
+              <div class="form-row">
+                <div class="form-field">
+                  <label class="form-label">Type</label>
+                  <select v-model="form.type" class="form-select">
+                    <option :value="1">Incident</option>
+                    <option :value="2">Demande</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Priorité</label>
+                  <select v-model="form.priority" class="form-select">
+                    <option :value="1">Très basse</option>
+                    <option :value="2">Basse</option>
+                    <option :value="3">Moyenne</option>
+                    <option :value="4">Haute</option>
+                    <option :value="5">Très haute</option>
+                    <option :value="6">Majeure</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Erreur -->
+              <div v-if="createError" class="form-error">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {{ createError }}
+              </div>
+
+              <!-- Actions -->
+              <div class="modal-actions">
+                <button type="button" class="btn-cancel" @click="closeModal" :disabled="creating">Annuler</button>
+                <button type="submit" class="btn-submit" :disabled="creating || !form.name || !form.content">
+                  <svg v-if="creating" class="spin-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                  {{ creating ? 'Création…' : 'Créer le ticket' }}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { fetchAllTickets } from '@/services/api/ticketService'
+import { ref, computed, onMounted } from 'vue'
+import {
+  fetchAllTickets,
+  fetchTicketById,
+  fetchTicketFollowups,
+  createTicket,
+  type Followup,
+} from '@/services/api/ticketService'
 import type { Ticket, TicketStatus, TicketPriority } from '@/models/Ticket'
 
-const loading = ref(false)
-const tickets = ref<Ticket[]>([])
-const activeStatus = ref('open')
+// ─── State ────────────────────────────────────────────────────────────────────
+const loading      = ref(false)
+const ficheLoading = ref(false)
+const tickets      = ref<Ticket[]>([])
+const selectedId   = ref<number | null>(null)
+const selectedTicket = ref<Ticket | null>(null)
+const followups    = ref<Followup[]>([])
+const activeStatus = ref('all')
+const searchQuery  = ref('')
+
+// ─── Modal création ───────────────────────────────────────────────────────────
+const showModal  = ref(false)
+const creating   = ref(false)
+const createError = ref('')
+const form = ref({ name: '', content: '', type: 1 as 1 | 2, priority: 3 })
+
 const statuses = [
   { key: 'all',    label: 'Tous' },
   { key: 'open',   label: 'Ouverts' },
@@ -79,72 +382,159 @@ const statuses = [
   { key: 'closed', label: 'Fermés' },
 ]
 
+// ─── Filtrage ─────────────────────────────────────────────────────────────────
+const filteredTickets = computed(() => {
+  let list = tickets.value.filter(t => !t.isDeleted)
+
+  if (activeStatus.value === 'open')   list = list.filter(t => t.status !== 5 && t.status !== 6)
+  if (activeStatus.value === 'solved') list = list.filter(t => t.status === 5)
+  if (activeStatus.value === 'closed') list = list.filter(t => t.status === 6)
+
+  const q = searchQuery.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(t =>
+      t.title.toLowerCase().includes(q) || String(t.id).includes(q),
+    )
+  }
+  return list
+})
+
+const cleanDescription = computed(() => {
+  if (!selectedTicket.value?.description) return ''
+  const stripped = cleanHtml(selectedTicket.value.description)
+  // Ignorer les descriptions vides type "<p><br /></p>"
+  return stripped.replace(/\n/g, '').trim() ? stripped : ''
+})
+
+// ─── Chargement de la liste ───────────────────────────────────────────────────
 async function load() {
   loading.value = true
   try {
-    // TODO: Ajouter la logique de filtre par statut
     tickets.value = await fetchAllTickets()
-  } catch (error) {
-    console.error("Erreur lors du chargement des tickets:", error)
-    tickets.value = []
+  } catch (e) {
+    console.error('Erreur chargement tickets :', e)
   } finally {
     loading.value = false
   }
 }
 
-// --- Fonctions d'aide à l'affichage ---
+// ─── Fiche détail ─────────────────────────────────────────────────────────────
+async function openFiche(id: number) {
+  if (selectedId.value === id) {
+    closeFiche()
+    return
+  }
+  selectedId.value   = id
+  selectedTicket.value = null
+  followups.value    = []
+  ficheLoading.value = true
+  try {
+    const [ticket, fups] = await Promise.all([
+      fetchTicketById(id),
+      fetchTicketFollowups(id),
+    ])
+    selectedTicket.value = ticket
+    followups.value      = fups
+  } catch (e) {
+    console.error('Erreur fiche ticket :', e)
+  } finally {
+    ficheLoading.value = false
+  }
+}
 
-function formatDate(dateString: string): string {
-  if (!dateString) return '—'
-  return new Date(dateString).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+function closeFiche() {
+  selectedId.value     = null
+  selectedTicket.value = null
+  followups.value      = []
+}
+
+// ─── Modal création ───────────────────────────────────────────────────────────
+function openModal() {
+  form.value    = { name: '', content: '', type: 1, priority: 3 }
+  createError.value = ''
+  showModal.value = true
+}
+
+function closeModal() {
+  if (creating.value) return
+  showModal.value = false
+}
+
+async function submitTicket() {
+  if (!form.value.name.trim() || !form.value.content.trim()) return
+  creating.value    = true
+  createError.value = ''
+  try {
+    const { id } = await createTicket({
+      name:     form.value.name.trim(),
+      content:  form.value.content.trim(),
+      type:     form.value.type,
+      priority: form.value.priority,
+      urgency:  form.value.priority,   // même valeur par défaut
+    })
+    showModal.value = false
+    await load()
+    await openFiche(id)
+  } catch (e: unknown) {
+    createError.value = e instanceof Error ? e.message : 'Erreur lors de la création'
+  } finally {
+    creating.value = false
+  }
+}
+
+// ─── Helpers affichage ────────────────────────────────────────────────────────
+function formatDate(d?: string): string {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
   })
 }
 
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  1: 'Nouveau',
-  2: 'En cours',
-  3: 'Planifié',
-  4: 'En attente',
-  5: 'Résolu',
-  6: 'Fermé',
-}
-function statusLabel(status: TicketStatus): string {
-  return STATUS_LABELS[status] ?? 'Inconnu'
-}
-function statusClass(status: TicketStatus): string {
-  const a: Record<TicketStatus, string> = {
-    1: 'badge-blue',
-    2: 'badge-orange',
-    3: 'badge-orange',
-    4: 'badge-gray',
-    5: 'badge-green',
-    6: 'badge-gray',
-  }
-  return a[status] ?? 'badge-gray'
+function formatDateTime(d?: string): string {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
-const PRIORITY_LABELS: Record<TicketPriority, string> = {
-  1: 'Très basse',
-  2: 'Basse',
-  3: 'Moyenne',
-  4.1: 'Haute',
-  5: 'Très haute',
-  6: 'Majeure',
+function cleanHtml(html: string): string {
+  if (!html) return '—'
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
-function priorityLabel(priority: TicketPriority): string {
-  return PRIORITY_LABELS[priority] ?? '—'
+
+const STATUS_LABELS: Record<TicketStatus, string> = {
+  1: 'Nouveau', 2: 'En cours', 3: 'Planifié', 4: 'En attente', 5: 'Résolu', 6: 'Fermé',
 }
-function priorityClass(priority: TicketPriority): string {
-  if (priority >= 5) return 'prio-high'
-  if (priority >= 3) return 'prio-medium'
+function statusLabel(s: TicketStatus): string {
+  return STATUS_LABELS[s] ?? 'Inconnu'
+}
+function statusClass(s: TicketStatus): string {
+  const map: Record<TicketStatus, string> = {
+    1: 'badge-blue', 2: 'badge-orange', 3: 'badge-orange',
+    4: 'badge-gray',  5: 'badge-green',  6: 'badge-gray',
+  }
+  return map[s] ?? 'badge-gray'
+}
+
+function priorityClass(p: TicketPriority): string {
+  if (p >= 5) return 'prio-high'
+  if (p >= 3) return 'prio-medium'
   return 'prio-low'
 }
 
-
-// Charger les tickets au montage du composant
 onMounted(load)
 </script>
 

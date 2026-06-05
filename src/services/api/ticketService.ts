@@ -69,6 +69,49 @@ export async function fetchClosedTickets(entityId?: number): Promise<Ticket[]> {
   return fetchAllTickets({ status: TICKET_STATUS.CLOSED as TicketStatus, entityId });
 }
 
+// ─── Types et fetch des suivis ────────────────────────────────────────────────
+
+export interface GlpiFollowup {
+  id: number
+  items_id: number
+  itemtype: string
+  users_id: number
+  date: string
+  date_mod: string
+  content: string
+  is_private: number
+}
+
+export interface Followup {
+  id: number
+  ticketId: number
+  userId: number
+  date: string
+  content: string
+  isPrivate: boolean
+}
+
+export async function fetchTicketFollowups(ticketId: number): Promise<Followup[]> {
+  try {
+    const raw = await fetchAllPaginated<GlpiFollowup>(
+      GLPI_ENDPOINTS.TICKET_FOLLOWUP,
+      { 'searchText[items_id]': ticketId },
+    )
+    return raw
+      .filter(f => f.items_id === ticketId && f.itemtype === 'Ticket')
+      .map(f => ({
+        id: f.id,
+        ticketId: f.items_id,
+        userId: f.users_id,
+        date: f.date,
+        content: f.content ?? '',
+        isPrivate: f.is_private === 1,
+      }))
+  } catch {
+    return []
+  }
+}
+
 // ─── Créer un ticket ──────────────────────────────────────────────────────────
 
 export interface CreateTicketPayload {
