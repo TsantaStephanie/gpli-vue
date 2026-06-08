@@ -30,29 +30,14 @@
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input type="search" class="search-input" placeholder="Rechercher un actif, un ticket…" />
-          <kbd class="search-kbd">⌘K</kbd>
         </div>
 
         <!-- Droite : statut API + notifs + utilisateur -->
         <div class="topbar-right">
-          <div class="api-status" :class="apiOnline ? 'online' : 'offline'">
-            <span class="status-dot" />
-            {{ apiOnline ? 'Connecté' : 'Hors ligne' }}
-          </div>
-
-          <button class="icon-btn notif-btn" title="Notifications">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-            <span class="notif-dot"></span>
-          </button>
-
           <div class="user-chip">
             <div class="topbar-avatar">AD</div>
             <div class="user-info">
               <span class="user-name">Admin</span>
-              <span class="user-role">Administrateur</span>
             </div>
           </div>
         </div>

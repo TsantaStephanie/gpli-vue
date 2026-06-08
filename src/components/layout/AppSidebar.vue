@@ -3,18 +3,9 @@
 
     <!-- ─── Brand ─────────────────────────────────────────────────────────────── -->
     <div class="sidebar-brand">
-      <div class="brand-icon">
-        <!-- Icône casque / support IT -->
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-          <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/>
-          <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
-        </svg>
-      </div>
       <Transition name="label">
         <div v-if="!collapsed" class="brand-text">
-          <span class="brand-name">DeskFlow</span>
-          <span class="brand-tag">ITSM</span>
+          <span class="brand-name">GLPI</span>
         </div>
       </Transition>
     </div>
@@ -22,9 +13,6 @@
     <!-- ─── Navigation ────────────────────────────────────────────────────────── -->
     <nav class="sidebar-nav">
       <div class="nav-section">
-        <Transition name="label">
-          <p v-if="!collapsed" class="nav-section-label">Opérations</p>
-        </Transition>
         <RouterLink
           v-for="item in mainNav"
           :key="item.to"
@@ -44,9 +32,6 @@
       </div>
 
       <div class="nav-section">
-        <Transition name="label">
-          <p v-if="!collapsed" class="nav-section-label">Référentiels</p>
-        </Transition>
         <RouterLink
           v-for="item in orgNav"
           :key="item.to"
@@ -63,9 +48,6 @@
       </div>
 
       <div class="nav-section">
-        <Transition name="label">
-          <p v-if="!collapsed" class="nav-section-label">Administration</p>
-        </Transition>
         <RouterLink
           to="/reset"
           class="nav-item"
@@ -74,7 +56,7 @@
         >
           <span class="nav-icon" v-html="icons.reset" />
           <Transition name="label">
-            <span v-if="!collapsed" class="nav-label">Réinitialiser</span>
+            <span v-if="!collapsed" class="nav-label">Réinitialisation</span>
           </Transition>
         </RouterLink>
       </div>
@@ -88,9 +70,6 @@
             <polyline :points="collapsed ? '9 18 15 12 9 6' : '15 18 9 12 15 6'" />
           </svg>
         </span>
-        <Transition name="label">
-          <span v-if="!collapsed" class="nav-label">Réduire le menu</span>
-        </Transition>
       </button>
     </div>
 
@@ -119,16 +98,10 @@ const icons = {
 
 const mainNav = [
   { to: '/dashboard', label: 'Dashboard',  icon: icons.dashboard },
-  { to: '/assets',    label: 'Parc matériel',    icon: icons.assets,  count: null },
+  { to: '/assets',    label: 'Assets',    icon: icons.assets,  count: null },
   { to: '/tickets',   label: 'Tickets',        icon: icons.tickets, count: null },
   // AppSidebar.vue — ajouter dans orgNav ou adminNav
   { to: '/import', label: 'Import CSV', icon: icons.import },
-]
-
-const orgNav = [
-  { to: '/users',     label: 'Utilisateurs',  icon: icons.users },
-  { to: '/entities',  label: 'Entités',       icon: icons.entities },
-  { to: '/locations', label: 'Localisations', icon: icons.locations },
 ]
 </script>
 

@@ -37,10 +37,7 @@ const newCost = ref({
 
 const activeStatus = ref('all')
 const statuses = [
-  { key: 'all',    label: 'Tous' },
-  { key: 'open',   label: 'Ouverts' },
-  { key: 'solved', label: 'Résolus' },
-  { key: 'closed', label: 'Fermés' },
+  { key: 'all',    label: 'Tous' }
 ]
 
 async function load() {
@@ -192,12 +189,9 @@ onMounted(load)
   <div class="module-view animate-in">
     <div class="mv-header">
       <div class="mv-title-wrap">
-        <div class="mv-icon icon-orange">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-        </div>
+
         <div>
           <h1 class="mv-title">Tickets</h1>
-          <p class="mv-sub">Suivi de l'assistance — API GLPI</p>
         </div>
       </div>
       <div class="mv-actions">
@@ -393,156 +387,4 @@ onMounted(load)
 
 <style scoped>
 @import '@/styles/TicketsView.css';
-
-.btn-edit {
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  background: #4299e1;
-  color: white;
-  border: none;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.btn-edit:hover {
-  background: #3182ce;
-}
-
-.btn-add-cost {
-  padding: 0.5rem 1rem;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  color: #3b82f6;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.btn-add-cost:hover {
-  background: #e2e8f0;
-}
-
-.costs-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.costs-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.75rem;
-  text-align: center;
-}
-
-.costs-card-value {
-  display: block;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.costs-card-label {
-  font-size: 0.65rem;
-  color: #64748b;
-}
-
-.detail-costs h4 {
-  margin: 0 0 0.75rem 0;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  border-radius: 12px;
-  width: 500px;
-  max-width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.modal-header h3 {
-  margin: 0;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #94a3b8;
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid #e2e8f0;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #4a5568;
-}
-
-.form-group input,
-.form-group textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  box-sizing: border-box;
-}
-
-.btn-secondary {
-  background-color: #e2e8f0;
-  color: #4a5568;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-}
 </style>
