@@ -121,7 +121,9 @@ export interface CreateTicketPayload {
   status?: TicketStatus;  // statut initial
   priority?: number;      // 1–6
   urgency?: number;       // 1–6
-  actiontime?: number;    // durée en secondes
+  actiontime?: number;      // durée en secondes
+  locationsId?: number;
+  timeToResolve?: string;   // format GLPI : 'YYYY-MM-DD HH:MM:SS'
   entitiesId?: number;
   itilcategoriesId?: number;
   usersIdRecipient?: number;
@@ -138,6 +140,8 @@ export async function createTicket(payload: CreateTicketPayload): Promise<{ id: 
       priority:           payload.priority ?? 3,
       urgency:            payload.urgency ?? 3,
       actiontime:         payload.actiontime ?? 0,
+      locations_id:       payload.locationsId,
+      time_to_resolve:    payload.timeToResolve,
       entities_id:        payload.entitiesId ?? 0,
       itilcategories_id:  payload.itilcategoriesId,
       users_id_recipient: payload.usersIdRecipient,
@@ -162,7 +166,11 @@ export async function updateTicket(
       ...(payload.status     !== undefined && { status:     payload.status }),
       ...(payload.priority   !== undefined && { priority:   payload.priority }),
       ...(payload.urgency    !== undefined && { urgency:    payload.urgency }),
-      ...(payload.actiontime !== undefined && { actiontime: payload.actiontime }),
+      ...(payload.actiontime    !== undefined && { actiontime:       payload.actiontime }),
+      ...(payload.locationsId   !== undefined && { locations_id:     payload.locationsId }),
+      ...(payload.timeToResolve !== undefined && { time_to_resolve:  payload.timeToResolve }),
+      ...(payload.itilcategoriesId !== undefined && { itilcategories_id: payload.itilcategoriesId }),
+      ...(payload.usersIdRecipient !== undefined && { users_id_recipient: payload.usersIdRecipient }),
     },
   });
 }

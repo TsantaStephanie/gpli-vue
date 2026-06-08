@@ -55,12 +55,6 @@ const router = createRouter({
           meta: { title: 'Localisations' },
         },
         {
-          path: 'settings',
-          name: 'settings',
-          component: () => import('@/views/admin/SettingsView.vue'),
-          meta: { title: 'Configuration' },
-        },
-        {
           path: 'reset',
           name: 'reset',
           component: () => import('@/views/admin/ResetView.vue'),

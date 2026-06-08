@@ -219,6 +219,18 @@
                 <span class="fiche-meta-label">Durée totale</span>
                 <span class="fiche-meta-value">{{ formatDuration(selectedTicket.actiontime) }}</span>
               </div>
+              <div v-if="selectedTicket.categoryId" class="fiche-meta-item">
+                <span class="fiche-meta-label">Catégorie</span>
+                <span class="fiche-meta-value">{{ categoryLabel(selectedTicket.categoryId) }}</span>
+              </div>
+              <div v-if="selectedTicket.requesterId" class="fiche-meta-item">
+                <span class="fiche-meta-label">Demandeur</span>
+                <span class="fiche-meta-value">{{ userLabel(selectedTicket.requesterId) }}</span>
+              </div>
+              <div v-if="selectedTicket.locationId" class="fiche-meta-item">
+                <span class="fiche-meta-label">Localisation</span>
+                <span class="fiche-meta-value">{{ locationLabel(selectedTicket.locationId) }}</span>
+              </div>
             </div>
 
             <!-- Description -->
@@ -366,6 +378,39 @@
                 </div>
               </div>
 
+              <!-- Catégorie ITIL + Utilisateur demandeur -->
+              <div class="form-row">
+                <div class="form-field">
+                  <label class="form-label">Catégorie ITIL</label>
+                  <select v-model="form.itilcategoriesId" class="form-select" :disabled="optLoading">
+                    <option :value="0">— Aucune —</option>
+                    <option v-for="c in optCategories" :key="c.id" :value="c.id">{{ c.label }}</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Utilisateur demandeur</label>
+                  <select v-model="form.usersIdRecipient" class="form-select" :disabled="optLoading">
+                    <option :value="0">— Aucun —</option>
+                    <option v-for="u in optUsers" :key="u.id" :value="u.id">{{ u.label }}</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Localisation + Date d'échéance -->
+              <div class="form-row">
+                <div class="form-field">
+                  <label class="form-label">Localisation</label>
+                  <select v-model="form.locationsId" class="form-select" :disabled="optLoading">
+                    <option :value="0">— Aucune —</option>
+                    <option v-for="l in optLocations" :key="l.id" :value="l.id">{{ l.label }}</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label class="form-label">Date d'échéance</label>
+                  <input v-model="form.timeToResolve" class="form-input" type="datetime-local" />
+                </div>
+              </div>
+
               <!-- Erreur -->
               <div v-if="createError" class="form-error">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -404,6 +449,10 @@ import {
   updateTicket,
   type Followup,
 } from '@/services/api/ticketService'
+import { fetchAllUsers }     from '@/services/api/userService'
+import { fetchAllLocations } from '@/services/api/locationService'
+import { fetchAllPaginated } from '@/services/api/glpiClient'
+import { GLPI_ENDPOINTS }   from '@/constants/glpi'
 import type { Ticket, TicketStatus, TicketPriority } from '@/models/Ticket'
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -416,6 +465,36 @@ const followups    = ref<Followup[]>([])
 const activeStatus = ref('all')
 const searchQuery  = ref('')
 
+// ─── Options des selects (chargées à l'ouverture du modal) ───────────────────
+interface SelectOption { id: number; label: string }
+const optCategories = ref<SelectOption[]>([])
+const optUsers      = ref<SelectOption[]>([])
+const optLocations  = ref<SelectOption[]>([])
+const optLoading    = ref(false)
+
+async function loadOptions() {
+  if (optLoading.value) return
+  optLoading.value = true
+  try {
+    const [cats, users, locs] = await Promise.all([
+      fetchAllPaginated<{ id: number; name: string; completename?: string }>(GLPI_ENDPOINTS.ITIL_CATEGORY),
+      fetchAllUsers(),
+      fetchAllLocations(),
+    ])
+    optCategories.value = cats.map(c => ({ id: c.id, label: c.completename || c.name }))
+    optUsers.value      = users
+      .filter(u => !u.isDeleted && u.isActive)
+      .map(u => ({ id: u.id, label: [u.firstname, u.lastname].filter(Boolean).join(' ') || u.username }))
+    optLocations.value  = locs
+      .filter(l => !l.isDeleted)
+      .map(l => ({ id: l.id, label: l.fullPath || l.name }))
+  } catch (e) {
+    console.error('Erreur chargement options :', e)
+  } finally {
+    optLoading.value = false
+  }
+}
+
 // ─── Modal création / modification ───────────────────────────────────────────
 const showModal   = ref(false)
 const creating    = ref(false)
@@ -427,6 +506,10 @@ const form = ref({
   status: 1 as TicketStatus,
   priority: 3,
   actiontimeHours: 0,
+  itilcategoriesId: 0,
+  usersIdRecipient: 0,
+  locationsId: 0,
+  timeToResolve: '',
 })
 
 const statuses = [
@@ -504,24 +587,35 @@ function closeFiche() {
 
 // ─── Modal création ───────────────────────────────────────────────────────────
 function openModal() {
-  editId.value  = null
-  form.value    = { name: '', content: '', type: 1, status: 1, priority: 3, actiontimeHours: 0 }
+  editId.value = null
+  form.value   = {
+    name: '', content: '', type: 1, status: 1, priority: 3, actiontimeHours: 0,
+    itilcategoriesId: 0, usersIdRecipient: 0, locationsId: 0, timeToResolve: '',
+  }
   createError.value = ''
-  showModal.value = true
+  showModal.value   = true
+  loadOptions()
 }
 
 function openEdit(ticket: Ticket) {
   editId.value = ticket.id
-  form.value = {
+  form.value   = {
     name:             ticket.title,
     content:          cleanHtml(ticket.description),
     type:             ticket.type,
     status:           ticket.status,
     priority:         ticket.priority,
     actiontimeHours:  ticket.actiontime ? +(ticket.actiontime / 3600).toFixed(2) : 0,
+    itilcategoriesId: ticket.categoryId  || 0,
+    usersIdRecipient: ticket.requesterId || 0,
+    locationsId:      ticket.locationId  || 0,
+    timeToResolve:    ticket.timeToResolve
+      ? ticket.timeToResolve.replace(' ', 'T').substring(0, 16)
+      : '',
   }
   createError.value = ''
-  showModal.value = true
+  showModal.value   = true
+  loadOptions()
 }
 
 function closeModal() {
@@ -535,13 +629,19 @@ async function submitTicket() {
   createError.value = ''
   try {
     const payload = {
-      name:       form.value.name.trim(),
-      content:    form.value.content.trim(),
-      type:       form.value.type,
-      status:     form.value.status,
-      priority:   form.value.priority,
-      urgency:    form.value.priority,
-      actiontime: Math.round((form.value.actiontimeHours || 0) * 3600),
+      name:             form.value.name.trim(),
+      content:          form.value.content.trim(),
+      type:             form.value.type,
+      status:           form.value.status,
+      priority:         form.value.priority,
+      urgency:          form.value.priority,
+      actiontime:       Math.round((form.value.actiontimeHours || 0) * 3600),
+      itilcategoriesId: form.value.itilcategoriesId || undefined,
+      usersIdRecipient: form.value.usersIdRecipient || undefined,
+      locationsId:      form.value.locationsId      || undefined,
+      timeToResolve:    form.value.timeToResolve
+        ? form.value.timeToResolve.replace('T', ' ') + ':00'
+        : undefined,
     }
 
     if (editId.value !== null) {
@@ -577,6 +677,16 @@ function formatDateTime(d?: string): string {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   })
+}
+
+function categoryLabel(id: number): string {
+  return optCategories.value.find(c => c.id === id)?.label ?? `#${id}`
+}
+function userLabel(id: number): string {
+  return optUsers.value.find(u => u.id === id)?.label ?? `Utilisateur #${id}`
+}
+function locationLabel(id: number): string {
+  return optLocations.value.find(l => l.id === id)?.label ?? `#${id}`
 }
 
 function formatDuration(seconds: number): string {
