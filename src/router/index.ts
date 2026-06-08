@@ -57,24 +57,6 @@ const router = createRouter({
           meta: { title: 'Synchronisation GLPI ↔ SQLite' }
         },
         {
-          path: 'users',
-          name: 'users',
-          component: () => import('@/views/UsersView.vue'),
-          meta: { title: 'Utilisateurs' },
-        },
-        {
-          path: 'entities',
-          name: 'entities',
-          component: () => import('@/views/EntitiesView.vue'),
-          meta: { title: 'Entités' },
-        },
-        {
-          path: 'locations',
-          name: 'locations',
-          component: () => import('@/views/LocationsView.vue'),
-          meta: { title: 'Localisations' },
-        },
-        {
           path: 'reset',
           name: 'reset',
           component: () => import('@/views/ResetView.vue'),
