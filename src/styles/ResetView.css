@@ -1,0 +1,128 @@
+@import './module.css';
+
+/* ─── Card centrale ──────────────────────────────────────────────────────────── */
+.reset-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 28px 24px;
+  display: flex; flex-direction: column; gap: 24px;
+  max-width: 640px;
+}
+
+/* ─── Avertissement ──────────────────────────────────────────────────────────── */
+.reset-warning {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 13px 16px; border-radius: var(--radius-md);
+  background: #fffbeb; border: 1px solid #fde68a;
+  color: #92400e; font-size: 0.84rem; line-height: 1.6;
+}
+.reset-warning svg { flex-shrink: 0; margin-top: 2px; color: #d97706; }
+
+/* ─── Scope list ─────────────────────────────────────────────────────────────── */
+.reset-scope-title {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.reset-scope-list { display: flex; flex-direction: column; gap: 4px; }
+
+.reset-scope-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-elevated);
+}
+.scope-icon {
+  width: 30px; height: 30px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; border: 1px solid var(--border);
+}
+.icon-blue   { background: #eff6ff; color: #2563eb; border-color: #dbeafe; }
+.icon-orange { background: #fff7ed; color: #ea580c; border-color: #ffedd5; }
+.icon-cyan   { background: #ecfeff; color: #0891b2; border-color: #cffafe; }
+
+.scope-info  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.scope-name  { font-size: 0.83rem; font-weight: 600; color: var(--text-primary); }
+.scope-desc  { font-size: 0.72rem; color: var(--text-muted); }
+
+.scope-status { width: 20px; display: flex; align-items: center; justify-content: center; }
+.status-ok   { color: #16a34a; }
+.status-spin { color: var(--text-muted); }
+
+/* ─── Barre de progression ───────────────────────────────────────────────────── */
+.reset-progress-wrap { display: flex; flex-direction: column; gap: 6px; }
+.progress-bar-global {
+  height: 8px; background: var(--bg-hover);
+  border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.progress-fill-global {
+  height: 100%; background: #dc2626;
+  border-radius: 4px; transition: width 0.4s ease;
+}
+.progress-info {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.progress-step { font-size: 0.78rem; color: var(--text-secondary); }
+.progress-pct  { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); }
+
+/* ─── Résultat ───────────────────────────────────────────────────────────────── */
+.reset-done {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; border-radius: var(--radius-md);
+  background: #f0fdf4; border: 1px solid #bbf7d0;
+  color: #15803d; font-size: 0.84rem; font-weight: 600;
+}
+
+/* ─── Bouton principal ───────────────────────────────────────────────────────── */
+.btn-reset-all {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 12px;
+  border-radius: var(--radius-md);
+  background: #dc2626; color: white;
+  border: none; font-family: inherit; font-size: 0.9rem; font-weight: 700;
+  cursor: pointer; transition: background var(--transition);
+  letter-spacing: 0.01em;
+}
+.btn-reset-all:hover:not(:disabled) { background: #b91c1c; }
+.btn-reset-all:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ─── Modal ──────────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.15s ease;
+}
+.modal-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 32px 28px; width: 420px; max-width: 90vw;
+  box-shadow: var(--shadow-lg);
+  animation: fadeInUp 0.2s ease;
+}
+.modal-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: #fef2f2; border: 1px solid #fecaca;
+  display: flex; align-items: center; justify-content: center;
+  color: #dc2626; margin-bottom: 16px;
+}
+.modal-title { font-size: 1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+.modal-msg   { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.65; margin-bottom: 24px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-cancel {
+  padding: 8px 16px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-secondary); font-family: inherit; font-size: 0.84rem;
+  font-weight: 500; cursor: pointer; transition: all var(--transition);
+}
+.btn-cancel:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-confirm {
+  padding: 8px 18px; border-radius: var(--radius-md);
+  border: none; background: #dc2626; color: white;
+  font-family: inherit; font-size: 0.84rem; font-weight: 600;
+  cursor: pointer; transition: background var(--transition);
+}
+.btn-confirm:hover { background: #b91c1c; }
