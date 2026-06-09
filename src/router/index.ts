@@ -69,6 +69,12 @@ const router = createRouter({
           component: () => import('@/views/back/ImportView.vue'),
           meta: { title: 'Import de données' },
         },
+        {
+          path: 'kanban-settings',
+          name: 'kanban-settings',
+          component: () => import('@/views/back/KanbanSettingsView.vue'),
+          meta: { title: 'Paramètres Kanban' },
+        },
       ],
     },
     {

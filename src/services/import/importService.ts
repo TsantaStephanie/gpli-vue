@@ -57,6 +57,29 @@ const TICKET_STATUS_MAP: Record<string, number> = {
   'Closed':    6,
 }
 
+/**
+ * Résout un libellé de statut ticket vers son ID GLPI.
+ * Gère : anglais, français, insensible à la casse et aux accents.
+ * Ex: "Résolu" | "résolu" | "resolu" | "Solved" | "solved" → 5
+ */
+function resolveTicketStatus(raw: string): number {
+  if (!raw) return 1
+  const key = raw.trim()
+  // 1. Essai exact (valeurs déjà correctes : 'Solved', 'Closed'…)
+  if (TICKET_STATUS_MAP[key] !== undefined) return TICKET_STATUS_MAP[key]
+  // 2. Correspondances explicites (FR + EN + minuscules + variantes sans accent)
+  const lower = key.toLowerCase()
+  const map: Record<string, number> = {
+    // Anglais
+    'new': 1, 'assigned': 2, 'planned': 3, 'pending': 4, 'solved': 5, 'closed': 6,
+    // Français avec accents
+    'nouveau': 1, 'assigné': 2, 'planifié': 3, 'en attente': 4, 'résolu': 5, 'fermé': 6,
+    // Français sans accents (CSV peut les avoir supprimés)
+    'assigne': 2, 'planifie': 3, 'resolu': 5, 'ferme': 6,
+  }
+  return map[lower] ?? 1
+}
+
 const TICKET_PRIORITY_MAP: Record<string, number> = {
   'Very Low': 1,
   'Low':      2,
@@ -449,6 +472,35 @@ async function resolveModel(
   }
 }
 
+// ─── Recherche doublon ticket dans GLPI ──────────────────────────────────────
+async function findExistingTicket(
+  title: string,
+  date: string,
+  logDebug?: (msg: string) => void
+): Promise<number | null> {
+  if (!title) return null
+  try {
+    const { data } = await glpiClient.get('/Ticket', {
+      params: { 'searchText[name]': title, range: '0-10' },
+    })
+    if (Array.isArray(data) && data.length > 0) {
+      // Affiner : même titre ET même date (YYYY-MM-DD)
+      const datePrefix = date.substring(0, 10)
+      const match = data.find((t: any) =>
+        t.date && String(t.date).startsWith(datePrefix)
+      )
+      if (match) {
+        logDebug?.(`[Ticket] Doublon GLPI: "${title}" date=${datePrefix} → ID=${match.id}`)
+        return match.id
+      }
+      // Fallback : même titre seulement (sécurité)
+      logDebug?.(`[Ticket] Doublon potentiel (titre seul): "${title}" → ID=${data[0].id}`)
+      return data[0].id
+    }
+  } catch { /* silencieux */ }
+  return null
+}
+
 async function findAssetByName(
   name: string,
   nameToIdCache: Map<string, { itemtype: string; id: number }>,
@@ -699,28 +751,73 @@ async function importTickets(
   }
   const logDebug = (msg: string, details?: any) => addLog('debug', msg, details)
 
-  // Phase 1 : construction des payloads
-  const pending: Array<{ ref: string; row: TicketRow; payload: Record<string, unknown> }> = []
-
+  // Phase 1 : regroupement par Ref_Ticket (ordre CSV préservé)
+  // Chaque groupe = 1 ticket + son historique de statuts (ligne 1 → ligne N)
+  const groupedByRef = new Map<string, TicketRow[]>()
   for (const row of rows) {
-    const ref = row.Ref_Ticket
-    if (!ref) {
+    if (!row.Ref_Ticket) {
       addLog('warning', '[Ticket] Ligne sans Ref_Ticket — ignorée')
       stats.skipped++
       continue
     }
+    if (!groupedByRef.has(row.Ref_Ticket)) groupedByRef.set(row.Ref_Ticket, [])
+    groupedByRef.get(row.Ref_Ticket)!.push(row)
+  }
+
+  // Compter les transitions de statut détectées
+  let transitionCount = 0
+  for (const [, group] of groupedByRef) {
+    if (group.length > 1) transitionCount += group.length - 1
+  }
+  if (transitionCount > 0) {
+    addLog('info', `[Ticket] ${transitionCount} transition(s) de statut détectée(s) — des suivis GLPI seront créés`)
+  }
+
+  // Construction des payloads :
+  //   - Titre / Description / Type / Priorité / Date  → première ligne
+  //   - Statut courant                                → dernière ligne
+  //   - statusHistory                                 → toutes les lignes sauf la dernière
+  const pending: Array<{
+    ref: string
+    row: TicketRow
+    statusHistory: Array<{ status: string; date: string; heure: string }>
+    payload: Record<string, unknown>
+  }> = []
+
+  for (const [ref, group] of groupedByRef) {
+    const firstRow   = group[0]
+    const statusNums = group.map(r => resolveTicketStatus(r.Status))
+    const lastNum    = statusNums[statusNums.length - 1]
+
+    // Statut effectif :
+    // Si la progression se termine par Closed (6) ET est passée par Solved (5),
+    // on utilise Solved comme statut GLPI — le Closed devient un suivi.
+    // Sinon on prend la dernière ligne telle quelle.
+    let effectiveIdx = group.length - 1
+    if (lastNum === 6) {
+      const solvedIdx = statusNums.lastIndexOf(5)
+      if (solvedIdx !== -1) effectiveIdx = solvedIdx
+    }
+
+    const effectiveRow  = group[effectiveIdx]
+    const statusHistory = [
+      ...group.slice(0, effectiveIdx),
+      ...group.slice(effectiveIdx + 1),
+    ].map(r => ({ status: r.Status, date: r.Date, heure: r.Heure }))
+
     pending.push({
       ref,
-      row,
+      row: firstRow,
+      statusHistory,
       payload: {
-        name:            row.Titre,
-        content:         row.Description,
-        type:            TICKET_TYPE_MAP[row.Type]        ?? 1,
-        status:          TICKET_STATUS_MAP[row.Status]    ?? 1,
-        priority:        TICKET_PRIORITY_MAP[row.Priority] ?? 3,
+        name:            firstRow.Titre,
+        content:         firstRow.Description,
+        type:            TICKET_TYPE_MAP[firstRow.Type]         ?? 1,
+        status:          resolveTicketStatus(effectiveRow.Status),
+        priority:        TICKET_PRIORITY_MAP[firstRow.Priority] ?? 3,
         urgency:         3,
         impact:          3,
-        date:            parseGlpiDateTime(row.Date, row.Heure),
+        date:            parseGlpiDateTime(firstRow.Date, firstRow.Heure),
         requesttypes_id: 1,
       },
     })
@@ -736,12 +833,13 @@ async function importTickets(
       input: pending.map(t => t.payload),
     })
 
-    const results = Array.isArray(data) ? data : [data]
+    const results  = Array.isArray(data) ? data : [data]
     const itemLinks: Array<{ tickets_id: number; itemtype: string; items_id: number }> = []
+    const followups: Array<Record<string, unknown>> = []
 
     for (let i = 0; i < results.length; i++) {
       const result = results[i]
-      const { ref, row } = pending[i]
+      const { ref, row, statusHistory } = pending[i]
 
       if (!result?.id) {
         addLog('error', `[Ticket] Échec pour Ref#${ref}: ${result?.message || 'erreur inconnue'}`)
@@ -751,7 +849,7 @@ async function importTickets(
 
       const ticketId = result.id
       refToGlpiId.set(ref, ticketId)
-      addLog('success', `[Ticket] Ref#${ref} "${row.Titre}" créé (ID=${ticketId})`)
+      addLog('success', `[Ticket] Ref#${ref} "${row.Titre}" créé (ID=${ticketId}, statut final: ${pending[i].row.Titre})`)
       stats.created++
 
       // Résoudre les assets à lier
@@ -763,6 +861,18 @@ async function importTickets(
           continue
         }
         itemLinks.push({ tickets_id: ticketId, itemtype: assetRef.itemtype, items_id: assetRef.id })
+      }
+
+      // Préparer les suivis pour chaque statut intermédiaire (historique)
+      for (const hist of statusHistory) {
+        followups.push({
+          itemtype:        'Ticket',
+          items_id:        ticketId,
+          content:         `[Import] Statut : ${hist.status}`,
+          is_private:      0,
+          date:            parseGlpiDateTime(hist.date, hist.heure),
+          requesttypes_id: 1,
+        })
       }
     }
 
@@ -776,6 +886,18 @@ async function importTickets(
         addLog('warning', `[Ticket] Erreur batch liens: ${e.message}`, e.response?.data)
       }
     }
+
+    // Phase 4 : envoi batch des suivis de statut (historique de progression)
+    if (followups.length > 0) {
+      addLog('info', `[Ticket] Envoi batch API: ${followups.length} suivi(s) de statut`)
+      try {
+        await glpiClient.post('/ITILFollowup', { input: followups })
+        addLog('success', `[Ticket] ${followups.length} suivi(s) de statut créé(s)`)
+      } catch (e: any) {
+        addLog('warning', `[Ticket] Erreur batch suivis de statut: ${e.message}`, e.response?.data)
+      }
+    }
+
   } catch (e: any) {
     addLog('error', `[Ticket] Erreur batch: ${e.message}`, e.response?.data)
     for (const { ref } of pending) {

@@ -1,9 +1,6 @@
 <template>
   <div class="reset-view">
     <h1>Réinitialiser la base de données</h1>
-    <p class="warning">
-      <strong>Attention :</strong> Cette action est irréversible. Elle supprimera définitivement les données des catégories sélectionnées.
-    </p>
     <button @click="confirmReset" :disabled="isResetting">
       {{ isResetting ? 'Réinitialisation en cours...' : 'Lancer la réinitialisation' }}
     </button>
