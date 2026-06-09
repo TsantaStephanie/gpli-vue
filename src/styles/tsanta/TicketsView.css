@@ -1,0 +1,308 @@
+/* ============================================================
+   TICKETS VIEW (back/TicketsView.vue)
+   ============================================================ */
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.tickets-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 1100px) {
+  .tickets-layout {
+    grid-template-columns: 1fr 380px;
+    align-items: start;
+  }
+}
+
+/* ── Card base ───────────────────────────────────────────────── */
+.card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.card > h3 {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: .875rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--c-border);
+}
+
+/* ── Ticket list table ───────────────────────────────────────── */
+.list-container { overflow-x: auto; }
+
+.tickets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8125rem;
+}
+
+.tickets-table th {
+  padding: .5625rem .875rem;
+  text-align: left;
+  font-size: .6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--c-text-3);
+  border-bottom: 1px solid var(--c-border);
+  white-space: nowrap;
+  background: var(--c-bg);
+}
+
+.tickets-table td {
+  padding: .75rem .875rem;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  vertical-align: middle;
+}
+
+.tickets-table tbody tr:last-child td { border-bottom: none; }
+
+.clickable-row { cursor: pointer; transition: background .1s; }
+.clickable-row:hover         { background: #fafbfc; }
+.clickable-row.selected      { background: #eff6ff; }
+.clickable-row.selected td   { color: var(--c-text); }
+
+.col-title {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--c-text);
+}
+
+/* ── Ticket detail ───────────────────────────────────────────── */
+.ticket-detail { position: relative; }
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: .875rem;
+  gap: .5rem;
+}
+
+.detail-header h3 {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--c-text-2);
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.ticket-detail h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--c-text);
+  line-height: 1.4;
+  margin-bottom: .75rem;
+}
+
+.detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .375rem;
+  margin-bottom: .875rem;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--c-border);
+  margin: .875rem 0;
+}
+
+.detail-dates { display: flex; flex-direction: column; gap: .3rem; }
+.detail-dates p {
+  font-size: .8125rem;
+  color: var(--c-text-2);
+  line-height: 1.5;
+}
+
+.detail-content h4,
+.detail-items  h4,
+.detail-costs  h4 {
+  font-size: .8125rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: .5rem;
+}
+
+.html-content {
+  font-size: .8125rem;
+  color: var(--c-text-2);
+  line-height: 1.65;
+}
+
+/* Items list */
+.items-list { list-style: none; display: flex; flex-direction: column; gap: .375rem; }
+.items-list li {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .8125rem;
+  color: var(--c-text-2);
+}
+
+/* ── Costs ───────────────────────────────────────────────────── */
+.costs-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .625rem;
+  margin-bottom: .75rem;
+}
+
+.costs-card {
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: .75rem .875rem;
+}
+
+.costs-card-content { display: flex; flex-direction: column; gap: .125rem; }
+
+.costs-card-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+
+.costs-card-label {
+  font-size: .6875rem;
+  color: var(--c-text-3);
+  margin-top: .2rem;
+}
+
+.btn-add-cost {
+  margin-top: .5rem;
+  height: 32px;
+  padding: 0 .75rem;
+  border: 1.5px dashed var(--c-border);
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: .75rem;
+  color: var(--c-text-2);
+  cursor: pointer;
+  width: 100%;
+  transition: all .15s;
+  font-family: var(--font);
+}
+.btn-add-cost:hover {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  background: var(--c-primary-lt);
+}
+
+.btn-edit {
+  width: 100%;
+  height: 36px;
+  background: var(--c-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: .8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s;
+  font-family: var(--font);
+}
+.btn-edit:hover { background: var(--c-primary-dk); }
+
+/* Placeholder */
+.ticket-detail-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  color: var(--c-text-3);
+  font-size: .8125rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: var(--c-card);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 460px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.125rem 1.25rem;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.modal-header h3 {
+  font-size: .9375rem;
+  font-weight: 600;
+  color: var(--c-text);
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.modal-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--c-bg);
+  border-radius: var(--radius-sm);
+  font-size: 1.125rem;
+  color: var(--c-text-3);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.modal-close:hover { background: var(--c-danger-lt); color: var(--c-danger); }
+
+.modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .875rem;
+}
+
+.form-group { display: flex; flex-direction: column; gap: .3rem; }
+.form-group label {
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-bg);
+}

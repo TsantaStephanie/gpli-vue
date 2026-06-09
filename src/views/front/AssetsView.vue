@@ -1,994 +1,839 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { 
-  SearchAssets, 
-  GetAssetTypes, 
-  GetStatusOptions,
-  // GetAssetById,
-  type Asset, 
-  type AssetSearchParams 
-} from '@/services/assets/assetsService'
-import { fetchAllEntities } from '@/services/api/entityService'
-import { fetchAllLocations } from '@/services/api/locationService'
-import { fetchAllUsers } from '@/services/api/userService'
+import { GetAssets, RefreshCache, type Asset } from '@/services/assets/assetsService'
 
-const router = useRouter()
+const router   = useRouter()
+const loading   = ref(false)
+const loadError = ref('')
+const allAssets = ref<Asset[]>([])
+const selected  = ref<Asset | null>(null)
+const activeType = ref<string>('all')
+const searchText = ref('')
 
-// ===== ÉTAT =====
-const loading = ref(false)
-const loadingFilters = ref(false)
-const error = ref('')
-const assets = ref<Asset[]>([])
-const selectedAsset = ref<Asset | null>(null)
-
-// Données pour les dropdowns de FILTRES
-const entities = ref<any[]>([])
-const locations = ref<any[]>([])
-const users = ref<any[]>([])
-const assetTypes = ref<any[]>([])
-const statusOptions = ref<any[]>([])
-
-// ===== FILTRES AVEC SAUVEGARDE =====
-const loadFiltersFromStorage = () => {
-  const saved = sessionStorage.getItem('assets_filters')
-  if (saved) {
-    try {
-      return JSON.parse(saved)
-    } catch {
-      return {}
-    }
-  }
-  return {}
-}
-
-const filters = ref({
-  text: '',
-  type: '',
-  status: '',
-  entityId: '',
-  locationId: '',
-  userId: '',
-  serial: '',
-  inventoryNumber: '',
-  includeDeleted: false,
-  ...loadFiltersFromStorage()
-})
-
-// Sauvegarde automatique des filtres
-watch(filters, (newFilters) => {
-  sessionStorage.setItem('assets_filters', JSON.stringify(newFilters))
-}, { deep: true })
-
-// ===== COMPUTED =====
-const totalLabel = computed(() => {
-  if (loading.value) return 'Chargement...'
-  return `${assets.value.length} élément${assets.value.length > 1 ? 's' : ''}`
-})
-
-// ===== CHARGEMENT INITIAL =====
-onMounted(async () => {
-  await loadInitialData()
-  await load()
-})
-
-async function loadInitialData() {
-  loadingFilters.value = true
+// ── Chargement ─────────────────────────────────────────────────
+async function load(force = false) {
+  loading.value  = true
+  loadError.value = ''
   try {
-    const [allEntities, allLocations, allUsers, types, statuses] = await Promise.all([
-      fetchAllEntities(),
-      fetchAllLocations(),
-      fetchAllUsers({ isActive: true }),
-      GetAssetTypes(),
-      GetStatusOptions()
-    ])
-    
-    entities.value = allEntities
-    locations.value = allLocations
-    users.value = allUsers
-    assetTypes.value = types
-    statusOptions.value = statuses
-    
-    console.log('📋 Types chargés:', types)
-    console.log('📋 Statuts disponibles:', statuses)
-    
-  } catch (e) {
-    console.error('Erreur chargement données initiales:', e)
-    error.value = 'Erreur lors du chargement des données'
-  } finally {
-    loadingFilters.value = false
-  }
-}
-
-// ===== FONCTIONS DE RECHERCHE =====
-function toNumber(value: string): number | undefined {
-  return value === '' ? undefined : Number(value)
-}
-
-function buildSearchParams(): AssetSearchParams {
-  return {
-    text: filters.value.text.trim() || undefined,
-    type: filters.value.type || undefined,
-    status: filters.value.status || undefined,
-    entityId: toNumber(filters.value.entityId),
-    locationId: toNumber(filters.value.locationId),
-    userId: toNumber(filters.value.userId),
-    serial: filters.value.serial.trim() || undefined,
-    inventoryNumber: filters.value.inventoryNumber.trim() || undefined,
-    includeDeleted: filters.value.includeDeleted,
-  }
-}
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  selectedAsset.value = null
-
-  try {
-    const params = buildSearchParams()
-    console.log('🔍 Paramètres de recherche:', params)
-    
-    // 1. Récupérer TOUS les assets
-    let results = await SearchAssets(params)
-    
-    // 2. Appliquer les filtres supplémentaires (car SearchAssets ne les gère pas)
-    
-    // Filtre par ENTITÉ
-    if (params.entityId && params.entityId > 0) {
-      const selectedEntity = entities.value.find(e => e.id === params.entityId)
-      if (selectedEntity) {
-        const entityNameToMatch = selectedEntity.fullPath || selectedEntity.name
-        results = results.filter(a => a.entityName === entityNameToMatch)
-      }
-    }
-    
-    // Filtre par LOCALISATION
-    if (params.locationId && params.locationId > 0) {
-      const selectedLocation = locations.value.find(l => l.id === params.locationId)
-      if (selectedLocation) {
-        const locationNameToMatch = selectedLocation.fullPath || selectedLocation.name
-        results = results.filter(a => a.locationName === locationNameToMatch)
-      }
-    }
-    
-    // Filtre par UTILISATEUR
-    if (params.userId && params.userId > 0) {
-      const selectedUser = users.value.find(u => u.id === params.userId)
-      if (selectedUser) {
-        const userNameToMatch = `${selectedUser.firstname} ${selectedUser.lastname}`.trim() || selectedUser.username
-        results = results.filter(a => a.userName === userNameToMatch)
-      }
-    }
-    
-    assets.value = results
-    
-    console.log('✅ Résultats trouvés:', assets.value.length)
-    
+    if (force) await RefreshCache()
+    allAssets.value = await GetAssets()
   } catch (e: any) {
+    loadError.value = e.message || 'Impossible de charger les équipements.'
     console.error(e)
-    error.value = e.message || 'Erreur lors de la recherche'
   } finally {
     loading.value = false
   }
 }
 
-function resetFilters() {
-  filters.value = {
-    text: '',
-    type: '',
-    status: '',
-    entityId: '',
-    locationId: '',
-    userId: '',
-    serial: '',
-    inventoryNumber: '',
-    includeDeleted: false,
-  }
-  load()
+// ── Filtres par type ────────────────────────────────────────────
+const TYPE_FILTERS = [
+  { key: 'all',              label: 'Tous' },
+  { key: 'Computer',         label: 'Ordinateurs' },
+  { key: 'Monitor',          label: 'Écrans' },
+  { key: 'Printer',          label: 'Imprimantes' },
+  { key: 'Phone',            label: 'Téléphones' },
+  { key: 'NetworkEquipment', label: 'Réseau' },
+] as const
+
+function typeCount(key: string): number {
+  if (key === 'all') return allAssets.value.length
+  return allAssets.value.filter(a => a.type === key).length
 }
 
-// ===== ACTIONS =====
-function selectAsset(asset: Asset) {
-  selectedAsset.value = asset
-}
+const visibleFilters = computed(() =>
+  TYPE_FILTERS.filter(f => f.key === 'all' || typeCount(f.key) > 0)
+)
+
+const assets = computed(() => {
+  let result = allAssets.value
+  if (activeType.value !== 'all') {
+    result = result.filter(a => a.type === activeType.value)
+  }
+  const t = searchText.value.trim().toLowerCase()
+  if (t) {
+    result = result.filter(a =>
+      a.name.toLowerCase().includes(t) ||
+      a.serial?.toLowerCase().includes(t) ||
+      a.inventoryNumber?.toLowerCase().includes(t)
+    )
+  }
+  return result
+})
+
+// ── Sélection / modal ───────────────────────────────────────────
+function openAsset(asset: Asset) { selected.value = asset }
+function closeModal()            { selected.value = null  }
 
 function createTicketForAsset(asset: Asset) {
   router.push({
-    path: '/tickets/create',
-    query: {
-      itemtype: asset.type,
-      itemId: String(asset.id),
-    },
+    path: '/front/tickets/create',
+    query: { itemtype: asset.type, itemId: String(asset.id) },
   })
 }
 
-// ===== FONCTIONS D'AFFICHAGE =====
-
-function getTypeLabel(type: string): string {
-  const found = assetTypes.value.find(t => t.value === type)
-  return found?.label || type
+// ── Helpers d'affichage ─────────────────────────────────────────
+const TYPE_META: Record<string, { label: string; color: string; short: string }> = {
+  Computer:         { label: 'Ordinateur',  color: 'blue',   short: 'PC'  },
+  Monitor:          { label: 'Écran',        color: 'green',  short: 'MON' },
+  Printer:          { label: 'Imprimante',   color: 'orange', short: 'IMP' },
+  Phone:            { label: 'Téléphone',    color: 'purple', short: 'TÉL' },
+  NetworkEquipment: { label: 'Réseau',       color: 'cyan',   short: 'NET' },
 }
 
-function getStatusLabel(status: string): string {
-  return status || 'Inconnu'
+function typeMeta(type: string) {
+  return TYPE_META[type] ?? { label: type, color: 'gray', short: type.slice(0, 3).toUpperCase() }
 }
 
-function getEntityName(asset: Asset): string {
-  if (asset.entityName && asset.entityName !== '-') return asset.entityName
-  const found = entities.value.find(e => e.id === asset.entityId)
-  return found?.fullPath || found?.name || `Entité #${asset.entityId}`
+const STATUS_COLORS: Record<string, string> = {
+  'En production':  'green',
+  'En stock':       'yellow',
+  'En maintenance': 'orange',
+  'En panne':       'red',
+  'Réformé':        'gray',
+  'Hors service':   'gray',
 }
 
-function getLocationName(asset: Asset): string {
-  if (asset.locationName && asset.locationName !== '-') return asset.locationName
-  const found = locations.value.find(l => l.id === asset.locationId)
-  return found?.fullPath || found?.name || `Lieu #${asset.locationId}`
+function statusColor(status: string): string {
+  return STATUS_COLORS[status] ?? 'gray'
 }
 
-function getUserName(asset: Asset): string {
-  if (asset.userName && asset.userName !== '-') return asset.userName
-  const found = users.value.find(u => u.id === asset.userId)
-  if (found) return `${found.firstname} ${found.lastname}`.trim() || found.username
-  return `Utilisateur #${asset.userId}`
+function relativeDate(dateStr?: string | null): string {
+  if (!dateStr) return '—'
+  const diff  = Date.now() - new Date(dateStr).getTime()
+  const mins  = Math.floor(diff / 60_000)
+  const hours = Math.floor(diff / 3_600_000)
+  const days  = Math.floor(diff / 86_400_000)
+  if (mins  < 1)  return "À l'instant"
+  if (mins  < 60) return `il y a ${mins} min`
+  if (hours < 24) return `il y a ${hours}h`
+  if (days  < 30) return `il y a ${days}j`
+  return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function formatDate(value?: string | null): string {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (isNaN(date.getTime())) return '-'
-  return date.toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
+function formatFull(dateStr?: string | null): string {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('fr-FR', {
+    day: '2-digit', month: 'long', year: 'numeric',
   })
 }
 
-function getTypeBadgeClass(type: string): string {
-  const map: Record<string, string> = {
-    'Computer': 'badge-computer',
-    'Monitor': 'badge-monitor',
-    'Printer': 'badge-printer',
-    'Phone': 'badge-phone',
-    'NetworkEquipment': 'badge-network',
-  }
-  return map[type] || 'badge-computer'
+// ── Photos d'actifs ─────────────────────────────────────────────
+// Set des clés d'actifs dont l'image a échoué — remplacé pour déclencher la réactivité
+const failedPictures = ref<Set<string>>(new Set())
+
+function onPictureError(asset: Asset) {
+  const key = `${asset.type}-${asset.id}`
+  failedPictures.value = new Set([...failedPictures.value, key])
 }
 
-function getStatusClass(status: string): string {
-  const statusMap: Record<string, number> = {
-    'En service': 1,
-    'En production': 1,
-    'En stock': 2,
-    'Réformé': 3,
-    'En maintenance': 4,
-    'En attente': 4,
-    'En panne': 5,
-    'Hors service': 6,
-  }
-  const id = statusMap[status] || 0
-  return `status-${id}`
+function hasPicture(asset: Asset): boolean {
+  return !!asset.picture && !failedPictures.value.has(`${asset.type}-${asset.id}`)
 }
+
+function getAssetPictureUrl(picture: string): string {
+  // GLPI renvoie p. ex. "_pictures/ComputerFront_8.png"
+  const path = picture.startsWith('_pictures/') ? picture : `_pictures/${picture}`
+  return `/front/document.send.php?file=${encodeURIComponent(path)}`
+}
+
+onMounted(() => load())
 </script>
 
 <template>
-  <div class="module-view animate-in">
-    <!-- EN-TÊTE -->
-    <div class="mv-header">
-      <div class="mv-title-wrap">
-        <div class="mv-icon icon-blue">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-        </div>
-        <div>
-          <h1 class="mv-title">Éléments du parc</h1>
-          <p class="mv-sub">Recherche multi-critères via GLPI</p>
-        </div>
+  <div class="portal-page">
+
+    <!-- ── Hero ─────────────────────────────────────────────── -->
+    <div class="portal-hero">
+      <div class="hero-text">
+        <h1>Mon parc informatique</h1>
+        <p>Consultez les équipements qui vous sont affectés</p>
       </div>
-      <div class="mv-actions">
-        <span class="result-count">{{ totalLabel }}</span>
-        <button class="btn-secondary" @click="resetFilters" :disabled="loading">Réinitialiser</button>
-        <button class="btn-fetch" @click="load" :disabled="loading">
-          <svg v-if="loading" class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </div>
+
+    <!-- ── Barre de filtres ──────────────────────────────────── -->
+    <div class="filter-bar">
+      <div class="filter-pills">
+        <button
+          v-for="f in visibleFilters" :key="f.key"
+          class="pill" :class="{ active: activeType === f.key }"
+          @click="activeType = f.key"
+        >
+          {{ f.label }}
+          <span class="pill-count">{{ typeCount(f.key) }}</span>
+        </button>
+      </div>
+      <div class="filter-right">
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          {{ loading ? 'Chargement...' : 'Rechercher' }}
+          <input
+            v-model="searchText"
+            type="text"
+            placeholder="Rechercher…"
+          />
+          <button v-if="searchText" class="search-clear" @click="searchText = ''">×</button>
+        </div>
+        <button class="btn-refresh" @click="load(true)" :disabled="loading">
+          <svg :class="{ spin: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Actualiser
         </button>
       </div>
     </div>
 
-    <!-- ERREUR -->
-    <div v-if="error" class="alert-error">{{ error }}</div>
-
-    <!-- FILTRES -->
-    <div class="filters-card">
-      <div class="filter-group">
-        <label>Recherche</label>
-        <input v-model="filters.text" type="text" placeholder="Nom de l'élément" @keyup.enter="load" />
-      </div>
-
-      <div class="filter-group">
-        <label>Type</label>
-        <select v-model="filters.type">
-          <option v-for="type in assetTypes" :key="type.value" :value="type.value">
-            {{ type.label }} ({{ type.count }})
-          </option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label>Statut</label>
-        <select v-model="filters.status">
-          <option v-for="status in statusOptions" :key="status.value" :value="status.value">
-            {{ status.label }}
-          </option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label>Entité</label>
-        <select v-model="filters.entityId" :disabled="loadingFilters">
-          <option value="">Toutes les entités</option>
-          <option v-for="entity in entities" :key="entity.id" :value="String(entity.id)">
-            {{ entity.fullPath || entity.name }}
-          </option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label>Localisation</label>
-        <select v-model="filters.locationId" :disabled="loadingFilters">
-          <option value="">Toutes les localisations</option>
-          <option v-for="location in locations" :key="location.id" :value="String(location.id)">
-            {{ location.fullPath || location.name }}
-          </option>
-        </select>
-      </div>
-
-      <!-- <div class="filter-group">
-        <label>Utilisateur</label>
-        <select v-model="filters.userId" :disabled="loadingFilters">
-          <option value="">Tous les utilisateurs</option>
-          <option v-for="user in users" :key="user.id" :value="String(user.id)">
-            {{ `${user.firstname} ${user.lastname}`.trim() || user.username }}
-          </option>
-        </select>
-      </div> -->
-
-      <div class="filter-group">
-        <label>Série</label>
-        <input v-model="filters.serial" type="text" placeholder="Numéro de série" @keyup.enter="load" />
-      </div>
-
-      <!-- <div class="filter-group">
-        <label>Inventaire</label>
-        <input v-model="filters.inventoryNumber" type="text" placeholder="Numéro interne" @keyup.enter="load" />
-      </div> -->
-
-      <label class="checkbox-filter">
-        <input v-model="filters.includeDeleted" type="checkbox" />
-        <span>Afficher supprimés</span>
-      </label>
+    <!-- ── Erreur ───────────────────────────────────────────────── -->
+    <div v-if="loadError" class="load-error">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      {{ loadError }}
+      <button class="err-retry" @click="load(true)">Réessayer</button>
     </div>
 
-    <!-- LISTE DES ASSETS -->
-    <div class="assets-layout">
-      <div class="table-container" v-if="assets.length > 0">
-        <table>
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Nom</th>
-              <th>Statut</th>
-              <th>Entité</th>
-              <th>Localisation</th>
-              <th>Utilisateur</th>
-              <th>Série</th>
-              <th>Inventaire</th>
-              <th>Créé le</th>
-              <th>Modifié le</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="asset in assets"
-              :key="`${asset.type}-${asset.id}`"
-              :class="{ selected: selectedAsset?.id === asset.id }"
-              @click="selectAsset(asset)"
-            >
-              <td>
-                <span :class="['badge', getTypeBadgeClass(asset.type)]">
-                  {{ getTypeLabel(asset.type) }}
-                </span>
-              </td>
-              <td class="fw-bold">#{{ asset.id }} - {{ asset.name }}</td>
-              <td>
-                <span :class="['status-dot', getStatusClass(asset.status)]"></span>
-                {{ getStatusLabel(asset.status) }}
-              </td>
-              <td>{{ getEntityName(asset) }}</td>
-              <td>{{ getLocationName(asset) }}</td>
-              <td>{{ getUserName(asset) }}</td>
-              <td>{{ asset.serial || '-' }}</td>
-              <td>{{ asset.inventoryNumber || '-' }}</td>
-              <td>{{ formatDate(asset.createdAt) }}</td>
-              <td>{{ formatDate(asset.updatedAt) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <!-- ── Skeleton loader ───────────────────────────────────── -->
+    <div v-if="loading" class="assets-grid">
+      <div v-for="n in 9" :key="n" class="skeleton-card"></div>
+    </div>
 
-      <!-- ÉTAT VIDE -->
-      <div v-else class="empty-module">
-        <div class="em-icon icon-blue">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-          </svg>
+    <!-- ── Grille de cartes ──────────────────────────────────── -->
+    <div v-else-if="assets.length" class="assets-grid">
+      <button
+        v-for="asset in assets" :key="`${asset.type}-${asset.id}`"
+        class="asset-card"
+        @click="openAsset(asset)"
+      >
+        <!-- Photo ou couleur de type -->
+        <div class="card-photo" :class="`photo-bg-${typeMeta(asset.type).color}`">
+          <img
+            v-if="hasPicture(asset)"
+            :src="getAssetPictureUrl(asset.picture!)"
+            :alt="asset.name"
+            class="card-photo-img"
+            @error="onPictureError(asset)"
+          />
+          <span v-else class="photo-placeholder-text">{{ typeMeta(asset.type).short }}</span>
         </div>
-        <h2>Aucun élément</h2>
-        <p>Lancez une recherche ou modifiez vos critères.</p>
-      </div>
 
-      <!-- DÉTAIL DE L'ASSET SÉLECTIONNÉ -->
-      <aside class="asset-detail" v-if="selectedAsset">
-        <div class="detail-header">
-          <div>
-            <span :class="['badge', getTypeBadgeClass(selectedAsset.type)]">
-              {{ getTypeLabel(selectedAsset.type) }}
-            </span>
-            <h2>{{ selectedAsset.name }}</h2>
+        <div class="card-top">
+          <span class="type-chip" :class="`chip-${typeMeta(asset.type).color}`">
+            {{ typeMeta(asset.type).short }}
+          </span>
+          <span class="asset-num">#{{ asset.id }}</span>
+        </div>
+
+        <h3 class="card-title">{{ asset.name }}</h3>
+
+        <div class="card-meta">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          <span class="card-location">{{ asset.locationName && asset.locationName !== '-' ? asset.locationName : '—' }}</span>
+        </div>
+
+        <div class="card-bottom">
+          <span class="status-chip" :class="`chip-${statusColor(asset.status)}`">
+            <span class="chip-dot"></span>
+            {{ asset.status || 'Inconnu' }}
+          </span>
+          <span class="card-date">{{ relativeDate(asset.updatedAt) }}</span>
+        </div>
+      </button>
+    </div>
+
+    <!-- ── État vide ─────────────────────────────────────────── -->
+    <div v-else class="empty-portal">
+      <div class="empty-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </div>
+      <p class="empty-title">Aucun équipement</p>
+      <p class="empty-sub">Aucun matériel ne correspond à votre recherche.</p>
+      <button v-if="searchText || activeType !== 'all'" class="btn-ghost" @click="searchText = ''; activeType = 'all'">
+        Réinitialiser les filtres
+      </button>
+    </div>
+
+
+
+  <!-- ── Modal détail (Teleport à l'intérieur du root pour éviter le warning Transition) -->
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="selected" class="modal-overlay" @click.self="closeModal">
+        <div class="modal-card">
+
+          <div class="modal-header">
+            <div class="modal-chips">
+              <span class="type-chip" :class="`chip-${typeMeta(selected.type).color}`">
+                {{ typeMeta(selected.type).label }}
+              </span>
+              <span class="status-chip" :class="`chip-${statusColor(selected.status)}`">
+                <span class="chip-dot"></span>
+                {{ selected.status || 'Inconnu' }}
+              </span>
+              <span class="asset-num">#{{ selected.id }}</span>
+            </div>
+            <button class="modal-close" @click="closeModal">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
-          <button class="btn-close" @click="selectedAsset = null">×</button>
+
+          <!-- Photo de l'actif (si disponible) -->
+          <div v-if="hasPicture(selected!)" class="modal-photo">
+            <img
+              :src="getAssetPictureUrl(selected!.picture!)"
+              :alt="selected!.name"
+              class="modal-photo-img"
+              @error="onPictureError(selected!)"
+            />
+          </div>
+
+          <h2 class="modal-title">{{ selected.name }}</h2>
+
+          <div class="modal-meta">
+            <div class="meta-item" v-if="selected.locationName && selected.locationName !== '-'">
+              <span class="meta-label">Localisation</span>
+              <span class="meta-val">{{ selected.locationName }}</span>
+            </div>
+            <div class="meta-item" v-if="selected.userName && selected.userName !== '-'">
+              <span class="meta-label">Utilisateur</span>
+              <span class="meta-val">{{ selected.userName }}</span>
+            </div>
+            <div class="meta-item" v-if="selected.entityName && selected.entityName !== '-'">
+              <span class="meta-label">Entité</span>
+              <span class="meta-val">{{ selected.entityName }}</span>
+            </div>
+            <div class="meta-item" v-if="selected.serial">
+              <span class="meta-label">N° de série</span>
+              <span class="meta-val meta-mono">{{ selected.serial }}</span>
+            </div>
+            <div class="meta-item" v-if="selected.inventoryNumber">
+              <span class="meta-label">N° d'inventaire</span>
+              <span class="meta-val meta-mono">{{ selected.inventoryNumber }}</span>
+            </div>
+            <div class="meta-item" v-if="selected.updatedAt">
+              <span class="meta-label">Dernière mise à jour</span>
+              <span class="meta-val">{{ formatFull(selected.updatedAt) }}</span>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn-ghost" @click="closeModal">Fermer</button>
+            <button class="btn-cta" @click="createTicketForAsset(selected)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Créer un ticket
+            </button>
+          </div>
+
         </div>
-
-        <dl>
-          <dt>ID GLPI</dt>
-          <dd>#{{ selectedAsset.id }}</dd>
-          <dt>Statut</dt>
-          <dd>{{ getStatusLabel(selectedAsset.status) }}</dd>
-          <dt>Entité</dt>
-          <dd>{{ getEntityName(selectedAsset) }}</dd>
-          <dt>Localisation</dt>
-          <dd>{{ getLocationName(selectedAsset) }}</dd>
-          <dt>Utilisateur affecté</dt>
-          <dd>{{ getUserName(selectedAsset) }}</dd>
-          <dt>Numéro de série</dt>
-          <dd>{{ selectedAsset.serial || '-' }}</dd>
-          <dt>Numéro d'inventaire</dt>
-          <dd>{{ selectedAsset.inventoryNumber || '-' }}</dd>
-          <dt>Date de création</dt>
-          <dd>{{ formatDate(selectedAsset.createdAt) }}</dd>
-          <dt>Dernière modification</dt>
-          <dd>{{ formatDate(selectedAsset.updatedAt) }}</dd>
-        </dl>
-
-        <button class="btn-primary full-width" @click="createTicketForAsset(selectedAsset)">
-          Créer un ticket avec cet élément
-        </button>
-      </aside>
-    </div>
-  </div>
+      </div>
+    </Transition>
+  </Teleport>
+</div>
 </template>
 
 <style scoped>
-/* ============================================
-   LAYOUT PRINCIPAL
-   ============================================ */
-.module-view {
-  padding: 1.5rem;
-  max-width: 1600px;
-  margin: 0 auto;
-  background: #f8fafc;
-  min-height: 100vh;
-}
-
-/* ============================================
-   HEADER
-   ============================================ */
-.mv-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.mv-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.mv-icon {
-  width: 48px;
-  height: 48px;
-  background: #eef2ff;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #3b82f6;
-}
-
-.mv-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #0f172a;
-  margin: 0;
-}
-
-.mv-sub {
-  font-size: 0.875rem;
-  color: #64748b;
-  margin: 0.25rem 0 0;
-}
-
-.mv-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.result-count {
-  background: #e2e8f0;
-  padding: 0.375rem 0.875rem;
-  border-radius: 20px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-/* ============================================
-   BOUTONS
-   ============================================ */
-.btn-fetch,
-.btn-secondary,
-.btn-primary {
-  align-items: center;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  display: inline-flex;
-  font-weight: 600;
-  font-size: 0.875rem;
-  gap: 0.5rem;
-  justify-content: center;
-  padding: 0.5rem 1.25rem;
-  transition: all 0.2s ease;
-}
-
-.btn-fetch,
-.btn-primary {
-  background: #3b82f6;
-  color: white;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.btn-fetch:hover:not(:disabled),
-.btn-primary:hover:not(:disabled) {
-  background: #2563eb;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.btn-fetch:disabled,
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #e2e8f0;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #e2e8f0;
-  transform: translateY(-1px);
-}
-
-.btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.spin-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* ============================================
-   CARTE DES FILTRES
-   ============================================ */
-.filters-card {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  margin-bottom: 1.5rem;
-  padding: 1.25rem;
-  border: 1px solid #e2e8f0;
-}
-
-.filter-group {
+/* ── Page ──────────────────────────────────────────────────── */
+.portal-page {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-}
-
-.filter-group label,
-.checkbox-filter {
-  color: #334155;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.filter-group input,
-.filter-group select {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
-  background: white;
-}
-
-.filter-group input:focus,
-.filter-group select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.filter-group input:hover,
-.filter-group select:hover {
-  border-color: #cbd5e1;
-}
-
-.checkbox-filter {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
-  text-transform: none;
-}
-
-.checkbox-filter input {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-/* ============================================
-   ALERTE ERREUR
-   ============================================ */
-.alert-error {
-  background: #fef2f2;
-  border-left: 4px solid #ef4444;
-  border-radius: 8px;
-  color: #b91c1c;
-  margin-bottom: 1rem;
-  padding: 0.85rem 1rem;
-  font-size: 0.875rem;
-}
-
-/* ============================================
-   LAYOUT ASSETS + DETAIL
-   ============================================ */
-.assets-layout {
-  display: grid;
   gap: 1.5rem;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  align-items: start;
+  padding-bottom: 2rem;
 }
 
-/* ============================================
-   TABLEAU DES ASSETS
-   ============================================ */
-.table-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  overflow: auto;
-  border: 1px solid #e2e8f0;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-  min-width: 1000px;
-}
-
-th,
-td {
-  padding: 0.875rem 1rem;
-  text-align: left;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-th {
-  background: #f8fafc;
-  color: #475569;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-tbody tr {
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-tbody tr:hover {
-  background: #f8fafc;
-}
-
-tbody tr.selected {
-  background: #eff6ff;
-}
-
-.fw-bold {
-  font-weight: 600;
-  color: #0f172a;
-}
-
-/* ============================================
-   BADGES DE TYPE
-   ============================================ */
-.badge {
-  display: inline-block;
-  padding: 0.25rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  white-space: nowrap;
-  text-transform: uppercase;
-}
-
-.badge-computer {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.badge-monitor {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.badge-printer {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.badge-phone {
-  background: #f3e8ff;
-  color: #6b21a5;
-}
-
-.badge-network {
-  background: #fed7aa;
-  color: #9a3412;
-}
-
-/* ============================================
-   STATUT
-   ============================================ */
-.status-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 0.5rem;
-}
-
-.status-1 {
-  background: #22c55e;
-  box-shadow: 0 0 0 2px #dcfce7;
-}
-
-.status-2 {
-  background: #eab308;
-  box-shadow: 0 0 0 2px #fef9c3;
-}
-
-.status-3 {
-  background: #ef4444;
-  box-shadow: 0 0 0 2px #fee2e2;
-}
-
-.status-4 {
-  background: #f97316;
-  box-shadow: 0 0 0 2px #ffedd5;
-}
-
-.status-5 {
-  background: #94a3b8;
-  box-shadow: 0 0 0 2px #f1f5f9;
-}
-
-/* ============================================
-   PANEL LATÉRAL DÉTAIL
-   ============================================ */
-.asset-detail {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  padding: 1.25rem;
-  position: sticky;
-  top: 1rem;
-  border: 1px solid #e2e8f0;
-}
-
-.detail-header {
+/* ── Hero ──────────────────────────────────────────────────── */
+.portal-hero {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
   gap: 1rem;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #f1f5f9;
+  flex-wrap: wrap;
 }
 
-.detail-header h2 {
-  font-size: 1.125rem;
-  font-weight: 700;
+.hero-text h1 {
+  font-size: 1.625rem;
+  font-weight: 800;
   color: #0f172a;
-  margin: 0.5rem 0 0;
-}
-
-.btn-close {
-  background: transparent;
-  border: none;
-  font-size: 1.25rem;
-  cursor: pointer;
-  color: #94a3b8;
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
-  transition: all 0.15s ease;
-}
-
-.btn-close:hover {
-  background: #f1f5f9;
-  color: #475569;
-}
-
-dl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin: 0 0 1.25rem;
-}
-
-dt {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #64748b;
-  margin-bottom: -0.25rem;
-}
-
-dd {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #0f172a;
+  letter-spacing: -.03em;
   margin: 0;
 }
 
-.full-width {
-  width: 100%;
+.hero-text p {
+  font-size: .875rem;
+  color: #64748b;
+  margin: .25rem 0 0;
 }
 
-/* ============================================
-   ÉTAT VIDE
-   ============================================ */
-.empty-module {
-  background: white;
-  border-radius: 16px;
-  padding: 3rem;
+/* ── Filtres ───────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-pills {
+  display: flex;
+  gap: .375rem;
+  background: #f1f5f9;
+  padding: .25rem;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .375rem;
+  padding: .4rem .875rem;
+  border-radius: 9px;
+  border: none;
+  background: none;
+  font-size: .8125rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all .15s;
+}
+.pill:hover  { background: #e2e8f0; color: #334155; }
+.pill.active { background: #fff; color: #3b82f6; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+.pill-count {
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: .625rem;
+  font-weight: 700;
+  padding: .1rem .375rem;
+  border-radius: 100px;
+  min-width: 18px;
   text-align: center;
-  border: 1px solid #e2e8f0;
+}
+.pill.active .pill-count { background: #dbeafe; color: #1d4ed8; }
+
+.filter-right {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
 }
 
-.em-icon {
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 1rem;
-  background: #eef2ff;
+/* search box */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 0 .75rem;
+  height: 34px;
+  color: #94a3b8;
+  transition: border-color .15s;
+}
+.search-box:focus-within {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.08);
+}
+
+.search-box input {
+  border: none;
+  outline: none;
+  font-size: .8125rem;
+  color: #0f172a;
+  background: transparent;
+  width: 140px;
+}
+.search-box input::placeholder { color: #94a3b8; }
+
+.search-clear {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color .1s;
+}
+.search-clear:hover { color: #475569; }
+
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: .375rem;
+  padding: .4rem .875rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  font-size: .8125rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-refresh:hover:not(:disabled) { background: #f8fafc; }
+.btn-refresh:disabled { opacity: .5; cursor: not-allowed; }
+.btn-refresh svg.spin { animation: spin .8s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Grille de cartes ──────────────────────────────────────── */
+.assets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: .875rem;
+}
+
+.asset-card {
+  background: #fff;
+  border: 1px solid #e8edf2;
+  border-radius: 14px;
+  padding: 1.125rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .625rem;
+  cursor: pointer;
+  text-align: left;
+  transition: box-shadow .15s, transform .1s, border-color .15s;
+}
+.asset-card:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,.08);
+  border-color: #c7d2fe;
+  transform: translateY(-2px);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asset-num {
+  font-size: .75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-title {
+  font-size: .9375rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.4;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  color: #94a3b8;
+  min-height: 16px;
+}
+
+.card-location {
+  font-size: .75rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.card-date {
+  font-size: .75rem;
+  color: #94a3b8;
+}
+
+/* ── Chips de type & statut ────────────────────────────────── */
+.type-chip, .status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .6875rem;
+  font-weight: 700;
+  padding: .2rem .5rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.chip-blue   { background: #dbeafe; color: #1d4ed8; }
+.chip-green  { background: #dcfce7; color: #15803d; }
+.chip-orange { background: #ffedd5; color: #c2410c; }
+.chip-purple { background: #f3e8ff; color: #7e22ce; }
+.chip-cyan   { background: #cffafe; color: #0e7490; }
+.chip-yellow { background: #fef9c3; color: #854d0e; }
+.chip-red    { background: #fee2e2; color: #b91c1c; }
+.chip-gray   { background: #f1f5f9; color: #475569; }
+
+.chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* ── Photo de la carte ─────────────────────────────────────── */
+.card-photo {
+  height: 110px;
+  border-radius: 9px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.card-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-placeholder-text {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  opacity: .3;
+  user-select: none;
+}
+
+/* Fonds dégradés par type */
+.photo-bg-blue   { background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8; }
+.photo-bg-green  { background: linear-gradient(135deg, #f0fdf4, #dcfce7); color: #15803d; }
+.photo-bg-orange { background: linear-gradient(135deg, #fff7ed, #ffedd5); color: #c2410c; }
+.photo-bg-purple { background: linear-gradient(135deg, #faf5ff, #f3e8ff); color: #7e22ce; }
+.photo-bg-cyan   { background: linear-gradient(135deg, #ecfeff, #cffafe); color: #0e7490; }
+.photo-bg-gray   { background: linear-gradient(135deg, #f8fafc, #f1f5f9); color: #475569; }
+
+/* ── Skeleton loader ───────────────────────────────────────── */
+.skeleton-card {
+  height: 252px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e8edf2 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 14px;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Empty state ───────────────────────────────────────────── */
+.empty-portal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .875rem;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.empty-icon {
+  width: 72px;
+  height: 72px;
+  background: #f1f5f9;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #3b82f6;
+  color: #94a3b8;
 }
 
-.empty-module h2 {
-  font-size: 1.125rem;
-  color: #334155;
-  margin-bottom: 0.5rem;
+.empty-title { font-size: 1.125rem; font-weight: 700; color: #334155; margin: 0; }
+.empty-sub   { font-size: .875rem;  color: #94a3b8; margin: 0; }
+
+/* ── Modal ─────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
 }
 
-.empty-module p {
+@media (min-width: 640px) {
+  .modal-overlay { align-items: center; }
+}
+
+.modal-card {
+  background: #fff;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  box-shadow: 0 24px 60px rgba(0,0,0,.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modal-chips { display: flex; align-items: center; gap: .375rem; flex-wrap: wrap; }
+
+.modal-close {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #64748b;
-  font-size: 0.875rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.modal-close:hover { background: #e2e8f0; color: #0f172a; }
+
+.modal-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.4;
+  margin: 0;
 }
 
-/* ============================================
-   RESPONSIVE
-   ============================================ */
-@media (max-width: 1200px) {
-  .assets-layout {
-    grid-template-columns: 1fr;
-  }
-  
-  .asset-detail {
-    position: static;
-  }
+.modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1.5rem;
+  padding: .875rem 1rem;
+  background: #f8fafc;
+  border-radius: 10px;
 }
 
-@media (max-width: 768px) {
-  .module-view {
-    padding: 1rem;
-  }
-  
-  .mv-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .mv-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-  
-  .filters-card {
-    grid-template-columns: 1fr;
-  }
-  
-  .table-container {
-    border-radius: 12px;
-  }
-  
-  th, td {
-    padding: 0.625rem 0.875rem;
-  }
+.meta-item  { display: flex; flex-direction: column; gap: .125rem; }
+.meta-label { font-size: .6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; }
+.meta-val   { font-size: .875rem; font-weight: 500; color: #334155; }
+.meta-mono  { font-family: ui-monospace, 'Cascadia Code', monospace; font-size: .8125rem; color: #1e293b; }
+
+/* ── Photo dans le modal ───────────────────────────────────── */
+.modal-photo {
+  height: 200px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
 }
 
+.modal-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .75rem;
+  padding-top: .25rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.btn-ghost {
+  padding: .5rem 1.25rem;
+  border: 1px solid #e2e8f0;
+  background: none;
+  border-radius: 8px;
+  font-size: .875rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-ghost:hover { background: #f8fafc; }
+
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 1.125rem;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: .875rem;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s, transform .1s;
+}
+.btn-cta:hover { background: #2563eb; box-shadow: 0 4px 12px rgba(59,130,246,.3); transform: translateY(-1px); }
+
+/* ── Transition modal ──────────────────────────────────────── */
+.modal-enter-active, .modal-leave-active { transition: opacity .2s, transform .2s; }
+.modal-enter-from, .modal-leave-to       { opacity: 0; transform: translateY(16px); }
+
+/* ── Bannière d'erreur ─────────────────────────────────────── */
+.load-error {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  padding: .75rem 1rem;
+  background: #fef2f2;
+  border: 1px solid rgba(239,68,68,.2);
+  border-left: 3px solid #ef4444;
+  border-radius: 10px;
+  font-size: .875rem;
+  color: #b91c1c;
+}
+.err-retry {
+  margin-left: auto;
+  padding: .3rem .75rem;
+  border: 1px solid rgba(239,68,68,.3);
+  background: none;
+  border-radius: 6px;
+  font-size: .8125rem;
+  font-weight: 600;
+  color: #b91c1c;
+  cursor: pointer;
+  transition: background .15s;
+}
+.err-retry:hover { background: rgba(239,68,68,.08); }
+
+/* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .mv-icon {
-    width: 40px;
-    height: 40px;
-  }
-  
-  .mv-title {
-    font-size: 1.25rem;
-  }
-  
-  .mv-actions {
-    flex-wrap: wrap;
-  }
-  
-  .btn-fetch, .btn-secondary {
-    flex: 1;
-    justify-content: center;
-  }
-  
-  .empty-module {
-    padding: 2rem;
-  }
+  .filter-bar  { flex-direction: column; align-items: stretch; }
+  .filter-right { justify-content: space-between; }
+  .search-box input { width: 100px; }
 }
 </style>

@@ -473,5 +473,5 @@ function getStatusClass(status: string): string {
 </template>
 
 <style scoped>
-@import '@/styles/AssetsList.css';
+@import '@/styles/tsanta/AssetsList.css';
 </style>

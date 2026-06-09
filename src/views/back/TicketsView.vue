@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { 
   fetchAllTickets, 
@@ -13,8 +13,8 @@ import {
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router = useRouter()
-const loading = ref(false)
-const tickets = ref<Ticket[]>([])
+const loading     = ref(false)
+const allTickets  = ref<Ticket[]>([])
 const selectedTicket = ref<Ticket | null>(null)
 const selectedTicketItems = ref<any[]>([])
 const loadingItems = ref(false)
@@ -35,28 +35,38 @@ const newCost = ref({
   comment: ''
 })
 
-const activeStatus = ref('all')
-const statuses = [
-  { key: 'all',    label: 'Tous' }
-]
+// ── Recherche multicritère ────────────────────────────────────
+const searchText   = ref('')
+const searchType   = ref('')   // '' | '1' | '2'
+const searchStatus = ref('')   // '' | '1'…'6'
+
+const hasSearch = computed(() =>
+  searchText.value.trim() !== '' || searchType.value !== '' || searchStatus.value !== ''
+)
+
+function resetSearch() {
+  searchText.value   = ''
+  searchType.value   = ''
+  searchStatus.value = ''
+}
+
+const tickets = computed(() => {
+  let result = allTickets.value
+  const t = searchText.value.trim().toLowerCase()
+  if (t) result = result.filter(tk => tk.title.toLowerCase().includes(t))
+  if (searchType.value)   result = result.filter(tk => String(tk.type)   === searchType.value)
+  if (searchStatus.value) result = result.filter(tk => String(tk.status) === searchStatus.value)
+  return result
+})
 
 async function load() {
   loading.value = true
   selectedTicket.value = null
   try {
-    const allTickets = await fetchAllTickets()
-    if (activeStatus.value === 'open') {
-      tickets.value = allTickets.filter(t => t.status !== 5 && t.status !== 6)
-    } else if (activeStatus.value === 'solved') {
-      tickets.value = allTickets.filter(t => t.status === 5)
-    } else if (activeStatus.value === 'closed') {
-      tickets.value = allTickets.filter(t => t.status === 6)
-    } else {
-      tickets.value = allTickets
-    }
+    allTickets.value = await fetchAllTickets()
   } catch (error) {
     console.error("Erreur lors du chargement des tickets:", error)
-    tickets.value = []
+    allTickets.value = []
   } finally {
     loading.value = false
   }
@@ -195,13 +205,6 @@ onMounted(load)
         </div>
       </div>
       <div class="mv-actions">
-        <div class="filter-tabs">
-          <button v-for="s in statuses" :key="s.key" class="tab" :class="{ active: activeStatus === s.key }" @click="() => { activeStatus = s.key; load(); }">{{ s.label }}</button>
-        </div>
-        <button class="btn-fetch btn-orange" @click="load" :disabled="loading">
-          <svg v-if="loading" class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-          {{ loading ? 'Chargement...' : 'Recharger' }}
-        </button>
         <button class="btn-primary" @click="goToCreateTicket">
           + Nouveau Ticket
         </button>
@@ -211,9 +214,72 @@ onMounted(load)
     <div class="tickets-layout">
       <!-- Liste des Tickets -->
       <div class="tickets-list card">
-        <h3>Liste des Tickets</h3>
+        <div class="list-header">
+          <h3>Liste des Tickets</h3>
+
+          <!-- Barre de recherche multicritère -->
+          <div class="search-row">
+            <!-- Texte -->
+            <div class="search-input-wrap">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                v-model="searchText"
+                type="text"
+                placeholder="Rechercher un ticket…"
+                class="search-input"
+              />
+              <button v-if="searchText" class="input-clear" @click="searchText = ''">×</button>
+            </div>
+
+            <!-- Type -->
+            <div class="select-wrap">
+              <select v-model="searchType" class="search-select">
+                <option value="">Tous les types</option>
+                <option value="1">Incident</option>
+                <option value="2">Demande</option>
+              </select>
+            </div>
+
+            <!-- Statut -->
+            <div class="select-wrap">
+              <select v-model="searchStatus" class="search-select">
+                <option value="">Tous les statuts</option>
+                <option value="1">Nouveau</option>
+                <option value="2">En cours</option>
+                <option value="3">Planifié</option>
+                <option value="4">En attente</option>
+                <option value="5">Résolu</option>
+                <option value="6">Fermé</option>
+              </select>
+            </div>
+
+            <!-- Réinitialiser -->
+            <button v-if="hasSearch" class="btn-reset" @click="resetSearch">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+              Réinitialiser
+            </button>
+          </div>
+
+          <!-- Compteur -->
+          <div v-if="!loading && allTickets.length" class="search-count">
+            <strong>{{ tickets.length }}</strong> ticket{{ tickets.length !== 1 ? 's' : '' }}
+            <template v-if="hasSearch">
+              sur {{ allTickets.length }}
+              <span class="sep">·</span>
+              <button class="count-reset" @click="resetSearch">tout afficher</button>
+            </template>
+          </div>
+        </div>
+
         <div v-if="loading" class="loading-state">Chargement...</div>
-        <div v-else-if="tickets.length === 0" class="empty-state">Aucun ticket trouvé.</div>
+        <div v-else-if="tickets.length === 0" class="empty-state">
+          <template v-if="hasSearch">Aucun ticket ne correspond à la recherche.</template>
+          <template v-else>Aucun ticket trouvé.</template>
+        </div>
         <div v-else class="list-container">
           <table class="tickets-table">
             <thead>
@@ -386,5 +452,140 @@ onMounted(load)
 </template>
 
 <style scoped>
-@import '@/styles/TicketsView.css';
+@import '@/styles/tsanta/TicketsView.css';
+
+/* ── En-tête liste avec barre de recherche ──────────────────── */
+.list-header {
+  display: flex;
+  flex-direction: column;
+  gap: .625rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: .25rem;
+}
+
+.list-header h3 {
+  margin: 0;
+}
+
+/* ── Barre de recherche ─────────────────────────────────────── */
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 0 .625rem;
+  height: 32px;
+  color: #94a3b8;
+  flex: 1;
+  min-width: 180px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.search-input-wrap:focus-within {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.08);
+}
+
+.search-input {
+  border: none;
+  outline: none;
+  font-size: .8125rem;
+  color: #1e293b;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+}
+.search-input::placeholder { color: #94a3b8; }
+
+.input-clear {
+  background: none;
+  border: none;
+  font-size: .9375rem;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.input-clear:hover { color: #475569; }
+
+.select-wrap {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  height: 32px;
+  padding: 0 .25rem 0 .625rem;
+  display: flex;
+  align-items: center;
+  transition: border-color .15s;
+}
+.select-wrap:focus-within {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.08);
+}
+
+.search-select {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: .8125rem;
+  color: #334155;
+  cursor: pointer;
+  padding-right: 1.25rem;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .25rem center;
+}
+
+.btn-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .3rem .625rem;
+  background: #fff;
+  border: 1px solid #fca5a5;
+  border-radius: 7px;
+  font-size: .75rem;
+  font-weight: 500;
+  color: #ef4444;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.btn-reset:hover { background: #fef2f2; }
+
+/* ── Compteur ───────────────────────────────────────────────── */
+.search-count {
+  font-size: .75rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+.search-count strong { color: #475569; }
+
+.sep { color: #cbd5e1; }
+
+.count-reset {
+  background: none;
+  border: none;
+  font-size: .75rem;
+  color: #3b82f6;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.count-reset:hover { color: #2563eb; }
 </style>

@@ -4,7 +4,7 @@
  * Endpoint : GET /apirest.php/Ticket
  */
 
-import { fetchAllPaginated } from './glpiClient';
+import { fetchAllPaginated, glpiClient } from './glpiClient';
 import { GLPI_ENDPOINTS, TICKET_STATUS } from '@/constants/glpi';
 import {
   type GlpiTicket,
@@ -188,11 +188,22 @@ export async function searchTickets(criteria: Array<{ field: string; searchtype:
   return tickets;
 }
 
-export async function fetchAllTickets(params: TicketSearchParams = {}): Promise<Ticket[]> {
-  const raw = await fetchAllPaginated<GlpiTicket>(
-    GLPI_ENDPOINTS.TICKET,
-    buildTicketParams(params),
-  );
+export async function fetchAllTickets(_params: TicketSearchParams = {}): Promise<Ticket[]> {
+  // GET /Ticket sans is_deleted : GLPI renvoie les tickets non-supprimés par défaut.
+  // Passer is_deleted=0 active à tort la vue "corbeille" → tableau vide.
+  const { data } = await glpiClient.get(GLPI_ENDPOINTS.TICKET, {
+    params: { range: '0-9999' },
+    timeout: 120_000,
+  });
+
+  // GLPI peut renvoyer :
+  //   • Un tableau  : [{ id, name, ... }, ...]        ← cas normal
+  //   • Un objet    : { data: [...], totalcount: N }  ← endpoint search
+  //   • Un tableau  : [errorCode, "message"]          ← erreur déguisée en 200
+  const raw: GlpiTicket[] = Array.isArray(data)
+    ? (typeof data[0] === 'number' ? [] : data)
+    : (data?.data ?? []);
+
   return raw.map(mapGlpiTicketToTicket);
 }
 

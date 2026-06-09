@@ -72,12 +72,14 @@ async function runImport() {
   } catch (e: any) {
     result.value = {
       success: false,
-      logs: [{ level: 'error', message: `Erreur fatale : ${e.message}`, timestamp: new Date().toISOString() }],
+      rolledBack: false,
+      logs: [{ level: 'error', message: `Erreur fatale : ${e.message}`, timestamp: new Date().toISOString(), details: e.response?.data }],
       stats: {
         assets:  { total: 0, created: 0, skipped: 0, errors: 1 },
         tickets: { total: 0, created: 0, skipped: 0, errors: 0 },
         costs:   { total: 0, created: 0, errors: 0 },
         photos:  { total: 0, uploaded: 0, errors: 0 },
+        users:   { total: 0, created: 0, errors: 0 },
       },
     }
   } finally {
@@ -107,6 +109,12 @@ function logClass(level: ImportLogEntry['level']) {
 
 function logIcon(level: ImportLogEntry['level']) {
   return { success: '✓', error: '✗', warning: '⚠', info: '·' }[level]
+}
+
+function formatDetails(details: any): string {
+  if (!details) return ''
+  if (typeof details === 'string') return details
+  try { return JSON.stringify(details, null, 2) } catch { return String(details) }
 }
 </script>
 
@@ -233,11 +241,13 @@ function logIcon(level: ImportLogEntry['level']) {
     <!-- ── Résultats ── -->
     <div v-if="result" class="results-section">
 
-      <!-- Bandeau succès / échec -->
-      <div class="result-banner" :class="result.success ? 'banner-success' : 'banner-warning'">
+      <!-- Bandeau succès / rollback / avertissement -->
+      <div class="result-banner" :class="result.success ? 'banner-success' : result.rolledBack ? 'banner-error' : 'banner-warning'">
         <svg v-if="result.success" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
         <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>{{ result.success ? 'Import terminé avec succès' : 'Import terminé avec des avertissements' }}</span>
+        <span v-if="result.success">Import terminé avec succès</span>
+        <span v-else-if="result.rolledBack">Import annulé — des erreurs ont été détectées, les données ont été réinitialisées</span>
+        <span v-else>Import terminé avec des avertissements</span>
       </div>
 
       <!-- Statistiques -->
@@ -303,7 +313,10 @@ function logIcon(level: ImportLogEntry['level']) {
             :class="logClass(entry.level)"
           >
             <span class="log-icon">{{ logIcon(entry.level) }}</span>
-            <span class="log-msg">{{ entry.message }}</span>
+            <span class="log-msg">
+              {{ entry.message }}
+              <pre v-if="entry.details" class="log-details">{{ formatDetails(entry.details) }}</pre>
+            </span>
           </div>
           <div v-if="filteredLogs.length === 0" class="log-empty">Aucune entrée pour ce filtre</div>
         </div>
@@ -314,5 +327,5 @@ function logIcon(level: ImportLogEntry['level']) {
 </template>
 
 <style scoped>
-
+@import '@/styles/tsanta/ImportView.css';
 </style>

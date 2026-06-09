@@ -46,7 +46,7 @@ export function clearSessionToken(): void {
 
 export const glpiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
-  timeout: 15_000,
+  timeout: 60_000,   // 60 s — suffisant pour les requêtes GLPI standard
   headers: {
     'Content-Type': 'application/json',
     'App-Token': APP_TOKEN,
@@ -71,16 +71,23 @@ glpiClient.interceptors.request.use(
 glpiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const status = error.response?.status;
-    const message = error.response?.data?.[1] ?? error.message;
-
-    if (status === 401) {
-      console.warn('[GLPI] Session expirée ou non autorisée — réinitialisation.');
-      clearSessionToken();
+    // Timeout réseau (pas de réponse HTTP)
+    if (error.code === 'ECONNABORTED' || !error.response) {
+      const msg = error.message ?? 'Timeout ou erreur réseau'
+      console.error('[GLPI API Error] Timeout/réseau :', msg)
+      return Promise.reject(new Error(msg))
     }
 
-    console.error(`[GLPI API Error ${status}]`, message);
-    return Promise.reject(new Error(`[${status}] ${message}`));
+    const status  = error.response.status
+    const message = error.response.data?.[1] ?? error.message
+
+    if (status === 401) {
+      console.warn('[GLPI] Session expirée ou non autorisée — réinitialisation.')
+      clearSessionToken()
+    }
+
+    console.error(`[GLPI API Error ${status}]`, message)
+    return Promise.reject(new Error(`[${status}] ${message}`))
   },
 );
 
@@ -148,6 +155,7 @@ export async function fetchAllPaginated<T>(
   endpoint: string,
   params: Record<string, unknown> = {},
   pageSize = 50,
+  timeout?: number,
 ): Promise<T[]> {
   const results: T[] = [];
   let start = 0;
@@ -159,6 +167,7 @@ export async function fetchAllPaginated<T>(
         ...params,
         range: `${start}-${start + pageSize - 1}`,
       },
+      ...(timeout !== undefined && { timeout }),
     });
 
     // GLPI retourne Content-Range : items 0-49/312

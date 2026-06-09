@@ -34,232 +34,215 @@ export interface Asset {
   updatedAt: string | null;
   createdAt: string | null;
   comment?: string | null;
+  picture: string | null;
 }
 
-// Cache pour la liste des assets (AllAssets)
-let cachedAssetsList: { id: number; name: string; type: string; status?: string; serial?: string }[] | null = null;
+// Cache de la liste complète (vidé par RefreshCache)
+let cachedAssets: Asset[] | null = null;
 
 // ============================================================
-// 2. GET ASSETS - Récupère la liste de tous les assets (1 appel)
+// 2. TYPES D'ACTIFS
+//    On utilise les endpoints directs GET /{type} (permission
+//    "Lecture" suffisante) et non /search/{type} (nécessite
+//    "Rechercher", souvent refusé aux profils limités).
 // ============================================================
 
-export async function GetAssets(): Promise<{ id: number; name: string; type: string; status?: string; serial?: string }[]> {
-  if (cachedAssetsList) {
-    return cachedAssetsList;
+const ASSET_TYPES = [
+  'Computer',
+  'Monitor',
+  'Printer',
+  'Phone',
+  'NetworkEquipment',
+] as const;
+
+// ============================================================
+// 3. CHARGEMENT — GET /{type}?expand_dropdowns=true par type
+// ============================================================
+
+export async function GetAssets(): Promise<Asset[]> {
+  if (cachedAssets) return cachedAssets;
+
+  console.log('🔄 Chargement des actifs...');
+
+  // expand_dropdowns=true : GLPI résout les FK en objets { id, name, completename }
+  // range=0-9999         : récupère tous les éléments en un appel
+  const qs = 'expand_dropdowns=true&range=0-9999';
+
+  const settled = await Promise.allSettled(
+    ASSET_TYPES.map(type =>
+      glpiClient
+        .get(`/${type}?${qs}`, { timeout: 120_000 })
+        .then(({ data }) => {
+          const items: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+          // Rejette les réponses GLPI de type [errorCode, "message"]
+          if (items.length > 0 && typeof items[0] === 'number') return [] as Asset[];
+          return items.map(item => transformItem(item, type));
+        })
+    )
+  );
+
+  const assets: Asset[] = [];
+  let forbidden = 0;
+
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      assets.push(...result.value);
+    } else {
+      const msg: string = (result.reason as any)?.message ?? String(result.reason);
+      console.warn('⚠️ Type d\'actif ignoré :', msg);
+      if (msg.includes('403') || msg.toLowerCase().includes('permission')) forbidden++;
+    }
   }
 
-  console.log('🔄 Chargement de la liste des assets depuis AllAssets...');
-  
-  const urlParams = new URLSearchParams();
-  urlParams.append('expand_dropdowns', 'true');
-  urlParams.append('range', '0-999');
-  
-  const { data } = await glpiClient.get(`/search/AllAssets?${urlParams.toString()}`);
-  
-  const assetsList = (data.data || []).map((item: any) => ({
-    id: item.id,
-    name: item['1'] || 'Sans nom',
-    type: item.itemtype || 'Unknown',
-    status: item['31'] || undefined,
-    serial: item['40'] || undefined
-  }));
-  
-  console.log(`✅ ${assetsList.length} assets trouvés`);
-  
-  cachedAssetsList = assetsList;
-  return assetsList;
-}
-
-// ============================================================
-// 3. GET ASSET DETAILS - Récupère TOUS les détails d'un asset
-//    Utilise l'endpoint /{itemtype}/{id} avec expand_dropdowns=true
-// ============================================================
-
-async function GetAssetDetails(itemtype: string, id: number): Promise<Asset | null> {
-  try {
-    // C'est CET endpoint qui donne TOUS les détails !
-    const url = `/${itemtype}/${id}`;
-    const urlParams = new URLSearchParams();
-    urlParams.append('expand_dropdowns', 'true');
-    
-    const { data } = await glpiClient.get(`${url}?${urlParams.toString()}`);
-    
-    console.log(`📦 Détails ${itemtype}#${id}:`, {
-      id: data.id,
-      name: data.name,
-      status: data.states_id,
-      entity: data.entities_id,
-      location: data.locations_id,
-      user: data.users_id
-    });
-    
-    return transformAsset(data, itemtype);
-  } catch (error) {
-    console.error(`Erreur chargement ${itemtype}#${id}:`, error);
-    return null;
+  // Si TOUS les types sont refusés, on lève une erreur explicite
+  if (forbidden === ASSET_TYPES.length) {
+    throw new Error(
+      'Accès refusé (403) sur tous les types d\'actifs.\n' +
+      'Vérifiez que le profil GLPI de cet utilisateur dispose du droit ' +
+      '"Lecture" sur Computer, Monitor, Printer, Phone et NetworkEquipment.'
+    );
   }
+
+  cachedAssets = assets;
+  console.log(`✅ ${cachedAssets.length} assets chargés`);
+  return cachedAssets;
 }
 
 // ============================================================
-// 4. TRANSFORMATION - Adaptée à la réponse de /{itemtype}/{id}
+// 4. TRANSFORMATION depuis GET /{type}?expand_dropdowns=true
 // ============================================================
-function transformAsset(item: any, defaultType?: string): Asset {
-  const type = item.itemtype || defaultType || 'Unknown';
-  const name = item.name || 'Sans nom';
-  
-  // Statut
-  let status = 'Inconnu';
-  const statusField = item.states_id || item.state || item.status;
-  if (typeof statusField === 'object' && statusField !== null) {
-    status = statusField.name || statusField.completename || 'Inconnu';
-  } else if (typeof statusField === 'string') {
-    status = statusField;
-  } else if (typeof statusField === 'number') {
-    const statusMap: Record<number, string> = {
-      1: 'En service', 2: 'En stock', 3: 'Réformé',
-      4: 'En maintenance', 5: 'En panne'
+
+/**
+ * Résout un champ FK retourné par expand_dropdowns.
+ * GLPI renvoie soit :
+ *   - un objet  { id, name, completename }
+ *   - un entier (si la FK vaut 0 ou sans expansion)
+ *   - 0 / null
+ */
+function resolveFK(val: any): { id: number; label: string } {
+  if (!val || val === 0) return { id: 0, label: '-' };
+  if (typeof val === 'object') {
+    const label = val.completename || val.name || '-';
+    return { id: Number(val.id) || 0, label };
+  }
+  // Entier brut (pas d'expansion) → on garde l'ID, le label sera l'ID
+  return { id: Number(val) || 0, label: String(val) };
+}
+
+function resolveStatus(val: any): string {
+  if (!val || val === 0) return 'Inconnu';
+  if (typeof val === 'object') return val.name || val.completename || 'Inconnu';
+  if (typeof val === 'string' && val.trim()) return val;
+  if (typeof val === 'number') {
+    const map: Record<number, string> = {
+      1: 'En production', 2: 'En stock', 3: 'Réformé',
+      4: 'En maintenance', 5: 'En panne',
     };
-    status = statusMap[statusField] || 'Inconnu';
+    return map[val] || 'Inconnu';
   }
-  
-  // Entité, Localisation, Utilisateur - directement les strings
-  const entityName = item.entity || item.entities_id || '-';
-  const locationName = item.location || item.locations_id || '-';
-  const userName = item.user || item.users_id || '-';
-  
+  return 'Inconnu';
+}
+
+function transformItem(item: any, type: string): Asset {
+  const entity   = resolveFK(item.entities_id);
+  const location = resolveFK(item.locations_id);
+  const user     = resolveFK(item.users_id);
+
   return {
-    id: item.id,
-    name,
+    id:              Number(item.id)     || 0,
+    name:            String(item.name   || 'Sans nom'),
     type,
-    status,
-    entityId: 0,  // Pas d'ID car on a direct le nom
-    entityName: typeof entityName === 'string' ? entityName : (entityName?.name || '-'),
-    locationId: 0,
-    locationName: typeof locationName === 'string' ? locationName : (locationName?.name || '-'),
-    userId: 0,
-    userName: typeof userName === 'string' ? userName : (userName?.name || '-'),
-    serial: item.serial || null,
-    inventoryNumber: item.otherserial || null,
-    updatedAt: item.date_mod || null,
-    createdAt: item.date_creation || null,
-    comment: item.comment || null
+    status:          resolveStatus(item.states_id),
+    entityId:        entity.id,
+    entityName:      entity.label,
+    locationId:      location.id,
+    locationName:    location.label,
+    userId:          user.id,
+    userName:        user.label,
+    serial:          item.serial      ? String(item.serial)      : null,
+    inventoryNumber: item.otherserial ? String(item.otherserial) : null,
+    updatedAt:       item.date_mod    ? String(item.date_mod)    : null,
+    createdAt:       item.date_creation ? String(item.date_creation) : null,
+    comment:         item.comment    ? String(item.comment)      : null,
+    picture:         item.picture_front ? String(item.picture_front) : null,
   };
 }
 
 // ============================================================
-// 5. SEARCH ASSETS - Recherche multicritère
+// 5. RECHERCHE — filtrage client sur les données déjà chargées
 // ============================================================
 
 export async function SearchAssets(params: AssetSearchParams = {}): Promise<Asset[]> {
-  console.log('🔍 Recherche avec paramètres:', params);
-  
-  // 1. Récupérer la liste de tous les assets (AllAssets)
-  const allAssets = await GetAssets();
-  
-  // 2. Filtrage rapide sur les données d'AllAssets
-  let filtered = [...allAssets];
-  
-  if (params.type && params.type !== '') {
+  const all = await GetAssets();
+  let filtered = [...all];
+
+  if (params.type?.trim())
     filtered = filtered.filter(a => a.type === params.type);
-  }
-  
+
   if (params.text?.trim()) {
-    const searchText = params.text.trim().toLowerCase();
-    filtered = filtered.filter(a => a.name.toLowerCase().includes(searchText));
+    const t = params.text.trim().toLowerCase();
+    filtered = filtered.filter(a => a.name.toLowerCase().includes(t));
   }
-  
   if (params.status?.trim()) {
-    const searchStatus = params.status.trim().toLowerCase();
-    filtered = filtered.filter(a => a.status?.toLowerCase().includes(searchStatus));
+    const s = params.status.trim().toLowerCase();
+    filtered = filtered.filter(a => a.status.toLowerCase().includes(s));
   }
-  
   if (params.serial?.trim()) {
-    const searchSerial = params.serial.trim().toLowerCase();
-    filtered = filtered.filter(a => a.serial?.toLowerCase().includes(searchSerial));
+    const s = params.serial.trim().toLowerCase();
+    filtered = filtered.filter(a => a.serial?.toLowerCase().includes(s));
   }
-  
-  console.log(`📊 Après filtrage rapide: ${filtered.length} assets`);
-  
-  // 3. Pour chaque asset, récupérer les détails complets
-  const assets: Asset[] = [];
-  const BATCH_SIZE = 10;
-  
-  for (let i = 0; i < filtered.length; i += BATCH_SIZE) {
-    const batch = filtered.slice(i, i + BATCH_SIZE);
-    const batchResults = await Promise.all(
-      batch.map(asset => GetAssetDetails(asset.type, asset.id))
-    );
-    assets.push(...batchResults.filter(a => a !== null));
+  if (params.inventoryNumber?.trim()) {
+    const n = params.inventoryNumber.trim().toLowerCase();
+    filtered = filtered.filter(a => a.inventoryNumber?.toLowerCase().includes(n));
   }
-  
-  // On retourne TOUS les résultats (sans filtrer entité/location/user)
-  // Ces filtres seront appliqués dans le composant Vue
-  return assets;
+
+  return filtered;
 }
 
 // ============================================================
-// 6. FONCTIONS UTILITAIRES
+// 6. UTILITAIRES
 // ============================================================
 
 export async function GetAssetTypes(): Promise<{ value: string; label: string; count: number }[]> {
   const assets = await GetAssets();
   const counts = new Map<string, number>();
-  
-  assets.forEach(asset => {
-    counts.set(asset.type, (counts.get(asset.type) || 0) + 1);
-  });
-  
-  const results = Array.from(counts.entries())
-    .map(([type, count]) => ({
-      value: type,
-      label: getTypeLabel(type),
-      count
-    }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  
-  const totalCount = results.reduce((sum, t) => sum + t.count, 0);
-  
-  return [
-    { value: '', label: 'Tous les types', count: totalCount },
-    ...results
-  ];
-}
+  assets.forEach(a => counts.set(a.type, (counts.get(a.type) || 0) + 1));
 
-function getTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    'Computer': 'Ordinateurs',
-    'Monitor': 'Écrans',
-    'Printer': 'Imprimantes',
-    'Phone': 'Téléphones',
-    'NetworkEquipment': 'Réseau',
-    'Peripheral': 'Périphériques'
-  };
-  return labels[type] || type;
+  const results = Array.from(counts.entries())
+    .map(([type, count]) => ({ value: type, label: getTypeLabel(type), count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return [
+    { value: '', label: 'Tous les types', count: assets.length },
+    ...results,
+  ];
 }
 
 export async function GetStatusOptions(): Promise<{ value: string; label: string }[]> {
   const assets = await GetAssets();
   const statusSet = new Set<string>();
-  
-  assets.forEach(asset => {
-    if (asset.status && asset.status !== 'Inconnu') {
-      statusSet.add(asset.status);
-    }
-  });
-  
-  const statuses = Array.from(statusSet).sort();
-  
+  assets.forEach(a => { if (a.status && a.status !== 'Inconnu') statusSet.add(a.status); });
+
   return [
     { value: '', label: 'Tous les statuts' },
-    ...statuses.map(s => ({ value: s, label: s }))
+    ...Array.from(statusSet).sort().map(s => ({ value: s, label: s })),
   ];
 }
 
 export async function RefreshCache(): Promise<void> {
-  cachedAssetsList = null;
+  cachedAssets = null;
   await GetAssets();
 }
 
 export async function GetAssetById(type: string, id: number): Promise<Asset | null> {
-  return GetAssetDetails(type, id);
+  const all = await GetAssets();
+  return all.find(a => a.type === type && a.id === id) ?? null;
+}
+
+function getTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    Computer: 'Ordinateurs', Monitor: 'Écrans', Printer: 'Imprimantes',
+    Phone: 'Téléphones', NetworkEquipment: 'Réseau', Peripheral: 'Périphériques',
+  };
+  return labels[type] || type;
 }

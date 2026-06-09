@@ -76,6 +76,12 @@ const router = createRouter({
       component: () => import('@/components/layout/AppFrontLayout.vue'),
       children: [
         {
+          path: '',
+          name: 'front-home',
+          component: () => import('@/views/front/HomeView.vue'),
+          meta: { title: 'Accueil' },
+        },
+        {
           path: 'tickets',
           name: 'tickets',
           component: () => import('@/views/front/TicketsView.vue'),
@@ -92,6 +98,12 @@ const router = createRouter({
           name: 'assets',
           component: () => import('@/views/front/AssetsView.vue'),
           meta: { title: 'Actifs' },
+        },
+        {
+          path: 'kanban',
+          name: 'front-kanban',
+          component: () => import('@/views/front/KanbanView.vue'),
+          meta: { title: 'Kanban' },
         },
       ]
     },

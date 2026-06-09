@@ -4,6 +4,7 @@
  */
 
 import glpiClient from '../api/glpiClient'
+import { resetService } from '../api/resetService'
 
 // ─── Types internes ───────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ export interface ImportLogEntry {
 
 export interface ImportResult {
   success: boolean
+  rolledBack: boolean
   logs: ImportLogEntry[]
   stats: {
     assets: { total: number; created: number; skipped: number; errors: number }
@@ -479,6 +481,58 @@ async function findAssetByName(
   return null
 }
 
+// ─── Normalisation des noms de statuts ───────────────────────────────────────
+// Plusieurs libellés CSV peuvent désigner le même état canonique côté dashboard.
+const STATUS_NORMALIZE: Record<string, string> = {
+  'En production':  'En production',
+  'En service':     'En production',
+  'En stock':       'En stock',
+  'Réformé':        'Réformé',
+  'Maintenance':    'En maintenance',
+  'En maintenance': 'En maintenance',
+  'En panne':       'En panne',
+  'Hors service':   'Hors service',
+}
+
+/**
+ * Recherche ou crée un State (glpi_states) dans GLPI.
+ * Utilise le nom canonique pour que le dashboard puisse associer les couleurs.
+ */
+async function resolveState(
+  name: string,
+  cache: Map<string, number>,
+  addLog?: (msg: string, details?: any) => void
+): Promise<number | undefined> {
+  if (!name) return undefined
+
+  const canonical = STATUS_NORMALIZE[name] ?? name
+  if (cache.has(canonical)) return cache.get(canonical)!
+
+  addLog?.(`[State] Recherche de "${canonical}"...`)
+
+  try {
+    const { data } = await glpiClient.get('/State', {
+      params: { 'searchText[name]': canonical, range: '0-1' },
+    })
+    if (Array.isArray(data) && data.length > 0) {
+      addLog?.(`[State] Trouvé: "${canonical}" (ID=${data[0].id})`)
+      cache.set(canonical, data[0].id)
+      return data[0].id
+    }
+
+    addLog?.(`[State] Création de "${canonical}"...`)
+    const { data: created } = await glpiClient.post('/State', {
+      input: { name: canonical, entities_id: 0, is_recursive: 1 },
+    })
+    addLog?.(`[State] Créé: ID=${created.id}`)
+    cache.set(canonical, created.id)
+    return created.id
+  } catch (e: any) {
+    addLog?.(`[State] Erreur pour "${canonical}": ${e.message}`)
+    return undefined
+  }
+}
+
 // ─── Import Feuille 1 : Assets ────────────────────────────────────────────────
 
 interface AssetRow {
@@ -499,19 +553,31 @@ async function importAssets(
   userStats: { total: number; created: number; errors: number }
 ): Promise<ImportResult['stats']['assets']> {
   const stats = { total: rows.length, created: 0, skipped: 0, errors: 0 }
-  
+
   const addLog = (level: ImportLogEntry['level'], message: string, details?: any) => {
     logs.push({ level, message, timestamp: new Date().toISOString(), details })
   }
   const logDebug = (msg: string, details?: any) => addLog('debug', msg, details)
 
-  const locationCache = new Map<string, number>()
+  const locationCache     = new Map<string, number>()
   const manufacturerCache = new Map<string, number>()
-  const modelCache = new Map<string, number>()  // ← NOUVEAU : cache pour les modèles
-  const userCache = new Map<string, number>()
+  const modelCache        = new Map<string, number>()
+  const userCache         = new Map<string, number>()
+  const stateCache        = new Map<string, number>()
+
+  const MODEL_FIELD: Record<string, string> = {
+    Computer:         'computermodels_id',
+    Monitor:          'monitormodels_id',
+    Printer:          'printermodels_id',
+    Phone:            'phonemodels_id',
+    NetworkEquipment: 'networkequipmentmodels_id',
+  }
+
+  // Phase 1 : résolution des références et regroupement par type
+  const pendingByType = new Map<string, Array<{ row: AssetRow; payload: Record<string, unknown> }>>()
 
   for (const row of rows) {
-    logDebug(`--- Traitement asset: ${row.Name} ---`)
+    logDebug(`--- Résolution asset: ${row.Name} ---`)
 
     const itemtype = ITEM_TYPE_MAP[row.Item_Type] ?? row.Item_Type
     if (!itemtype) {
@@ -520,7 +586,6 @@ async function importAssets(
       continue
     }
 
-    // Vérifier si l'asset existe déjà
     const existingId = await findAssetByInventory(row.Inventory_Number, itemtype, logDebug)
     if (existingId) {
       addLog('info', `[Asset] "${row.Name}" (${row.Inventory_Number}) déjà présent (ID=${existingId}) — ignoré`)
@@ -530,50 +595,60 @@ async function importAssets(
     }
 
     try {
-      const [locationId, manufacturerId, modelId, userId] = await Promise.all([
+      const [locationId, manufacturerId, modelId, userId, stateId] = await Promise.all([
         resolveLocation(row.Location, locationCache, logDebug),
         resolveManufacturer(row.Manufacturer, manufacturerCache, logDebug),
-        resolveModel(row.Model, itemtype, modelCache, logDebug),  // ← NOUVEAU
+        resolveModel(row.Model, itemtype, modelCache, logDebug),
         resolveOrCreateUser(row.User, userCache, addLog, userStats),
+        resolveState(row.Status, stateCache, logDebug),
       ])
-
-      logDebug(`[Asset] Résolutions: location=${locationId}, manufacturer=${manufacturerId}, model=${modelId}, user=${userId}`)
 
       const payload: Record<string, unknown> = {
         name:        row.Name,
         otherserial: row.Inventory_Number,
-        states_id:   ASSET_STATUS_MAP[row.Status] ?? 1,
+        states_id:   stateId ?? 1,
       }
       if (locationId)     payload.locations_id    = locationId
       if (manufacturerId) payload.manufacturers_id = manufacturerId
-      if (modelId) {
-        if (itemtype === 'Computer') {
-            payload.computermodels_id = modelId
-        } else if (itemtype === 'Monitor') {
-            payload.monitormodels_id = modelId
-        } else if (itemtype === 'Printer') {
-            payload.printermodels_id = modelId
-        } else if (itemtype === 'Phone') {
-            payload.phonemodels_id = modelId
-        } else if (itemtype === 'NetworkEquipment') {
-            payload.networkequipmentmodels_id = modelId
-        }
-        } 
-      if (userId) {
-        payload.users_id_tech = userId
-        payload.users_id      = userId
-      }
+      if (modelId && MODEL_FIELD[itemtype]) payload[MODEL_FIELD[itemtype]] = modelId
+      if (userId) { payload.users_id_tech = userId; payload.users_id = userId }
 
-      logDebug(`[Asset] Payload: ${JSON.stringify(payload)}`)
-
-      const { data } = await glpiClient.post<{ id: number }>(`/${itemtype}`, { input: payload })
-      nameToIdCache.set(row.Name, { itemtype, id: data.id })
-      
-      addLog('success', `[Asset] "${row.Name}" créé (${itemtype} ID=${data.id}) - Modèle: ${row.Model || 'aucun'}, User: ${row.User || 'aucun'}`)
-      stats.created++
+      if (!pendingByType.has(itemtype)) pendingByType.set(itemtype, [])
+      pendingByType.get(itemtype)!.push({ row, payload })
     } catch (e: any) {
-      addLog('error', `[Asset] Erreur pour "${row.Name}" : ${e.message}`, e.response?.data)
+      addLog('error', `[Asset] Erreur résolution pour "${row.Name}": ${e.message}`, e.response?.data)
       stats.errors++
+    }
+  }
+
+  // Phase 2 : envoi batch par type d'asset
+  for (const [itemtype, items] of pendingByType) {
+    if (items.length === 0) continue
+    addLog('info', `[Asset] Envoi batch API: ${items.length} ${itemtype}(s)`)
+
+    try {
+      const { data } = await glpiClient.post<Array<{ id: number; message?: string }>>(`/${itemtype}`, {
+        input: items.map(i => i.payload),
+      })
+
+      const results = Array.isArray(data) ? data : [data]
+      results.forEach((result, idx) => {
+        const { row } = items[idx]
+        if (result?.id) {
+          nameToIdCache.set(row.Name, { itemtype, id: result.id })
+          addLog('success', `[Asset] "${row.Name}" créé (${itemtype} ID=${result.id})`)
+          stats.created++
+        } else {
+          addLog('error', `[Asset] Échec pour "${row.Name}": ${result?.message || 'erreur inconnue'}`)
+          stats.errors++
+        }
+      })
+    } catch (e: any) {
+      addLog('error', `[Asset] Erreur batch ${itemtype}: ${e.message}`, e.response?.data)
+      for (const { row } of items) {
+        addLog('error', `[Asset] "${row.Name}" non créé (erreur batch)`)
+        stats.errors++
+      }
     }
   }
 
@@ -618,76 +693,93 @@ async function importTickets(
   refToGlpiId: Map<string, number>,
 ): Promise<ImportResult['stats']['tickets']> {
   const stats = { total: rows.length, created: 0, skipped: 0, errors: 0 }
-  
+
   const addLog = (level: ImportLogEntry['level'], message: string, details?: any) => {
     logs.push({ level, message, timestamp: new Date().toISOString(), details })
   }
   const logDebug = (msg: string, details?: any) => addLog('debug', msg, details)
 
-  for (const row of rows) {
-    logDebug(`--- Traitement ticket Ref#${row.Ref_Ticket} ---`)
+  // Phase 1 : construction des payloads
+  const pending: Array<{ ref: string; row: TicketRow; payload: Record<string, unknown> }> = []
 
+  for (const row of rows) {
     const ref = row.Ref_Ticket
     if (!ref) {
       addLog('warning', '[Ticket] Ligne sans Ref_Ticket — ignorée')
       stats.skipped++
       continue
     }
-
-    try {
-      const datetime = parseGlpiDateTime(row.Date, row.Heure)
-      const itemNames = parseItemsList(row.Items)
-      
-      logDebug(`[Ticket] Items liés: ${JSON.stringify(itemNames)}`)
-
-      const ticketPayload = {
-        name:      row.Titre,
-        content:   row.Description,
-        type:      TICKET_TYPE_MAP[row.Type]     ?? 1,
-        status:    TICKET_STATUS_MAP[row.Status]  ?? 1,
-        priority:  TICKET_PRIORITY_MAP[row.Priority] ?? 3,
-        urgency:   3,
-        impact:    3,
-        date:      datetime,
+    pending.push({
+      ref,
+      row,
+      payload: {
+        name:            row.Titre,
+        content:         row.Description,
+        type:            TICKET_TYPE_MAP[row.Type]        ?? 1,
+        status:          TICKET_STATUS_MAP[row.Status]    ?? 1,
+        priority:        TICKET_PRIORITY_MAP[row.Priority] ?? 3,
+        urgency:         3,
+        impact:          3,
+        date:            parseGlpiDateTime(row.Date, row.Heure),
         requesttypes_id: 1,
+      },
+    })
+  }
+
+  if (pending.length === 0) return stats
+
+  // Phase 2 : envoi batch tickets
+  addLog('info', `[Ticket] Envoi batch API: ${pending.length} ticket(s)`)
+
+  try {
+    const { data } = await glpiClient.post<Array<{ id: number; message?: string }>>('/Ticket', {
+      input: pending.map(t => t.payload),
+    })
+
+    const results = Array.isArray(data) ? data : [data]
+    const itemLinks: Array<{ tickets_id: number; itemtype: string; items_id: number }> = []
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]
+      const { ref, row } = pending[i]
+
+      if (!result?.id) {
+        addLog('error', `[Ticket] Échec pour Ref#${ref}: ${result?.message || 'erreur inconnue'}`)
+        stats.errors++
+        continue
       }
-      
-      logDebug(`[Ticket] Payload: ${JSON.stringify(ticketPayload)}`)
 
-      const { data } = await glpiClient.post<{ id: number }>('/Ticket', {
-        input: ticketPayload,
-      })
-
-      const ticketId = data.id
+      const ticketId = result.id
       refToGlpiId.set(ref, ticketId)
       addLog('success', `[Ticket] Ref#${ref} "${row.Titre}" créé (ID=${ticketId})`)
       stats.created++
 
-      // Lier les assets au ticket
-      for (const assetName of itemNames) {
+      // Résoudre les assets à lier
+      for (const assetName of parseItemsList(row.Items)) {
         let assetRef = nameToIdCache.get(assetName)
-        if (!assetRef) {
-          assetRef = await findAssetByName(assetName, nameToIdCache, logDebug) ?? undefined
-        }
+        if (!assetRef) assetRef = await findAssetByName(assetName, nameToIdCache, logDebug) ?? undefined
         if (!assetRef) {
           addLog('warning', `[Ticket#${ticketId}] Asset "${assetName}" introuvable — lien ignoré`)
           continue
         }
-        try {
-          await glpiClient.post('/Item_Ticket', {
-            input: {
-              tickets_id: ticketId,
-              itemtype:   assetRef.itemtype,
-              items_id:   assetRef.id,
-            },
-          })
-          addLog('info', `[Ticket#${ticketId}] Lié à "${assetName}" (${assetRef.itemtype}#${assetRef.id})`)
-        } catch (e: any) {
-          addLog('warning', `[Ticket#${ticketId}] Impossible de lier "${assetName}" : ${e.message}`)
-        }
+        itemLinks.push({ tickets_id: ticketId, itemtype: assetRef.itemtype, items_id: assetRef.id })
       }
-    } catch (e: any) {
-      addLog('error', `[Ticket] Erreur pour Ref#${ref} : ${e.message}`, e.response?.data)
+    }
+
+    // Phase 3 : envoi batch des liens ticket-actif
+    if (itemLinks.length > 0) {
+      addLog('info', `[Ticket] Envoi batch API: ${itemLinks.length} lien(s) ticket-actif`)
+      try {
+        await glpiClient.post('/Item_Ticket', { input: itemLinks })
+        addLog('success', `[Ticket] ${itemLinks.length} lien(s) ticket-actif créé(s)`)
+      } catch (e: any) {
+        addLog('warning', `[Ticket] Erreur batch liens: ${e.message}`, e.response?.data)
+      }
+    }
+  } catch (e: any) {
+    addLog('error', `[Ticket] Erreur batch: ${e.message}`, e.response?.data)
+    for (const { ref } of pending) {
+      addLog('error', `[Ticket] Ref#${ref} non créé (erreur batch)`)
       stats.errors++
     }
   }
@@ -710,18 +802,18 @@ async function importCosts(
   refToGlpiId: Map<string, number>,
 ): Promise<ImportResult['stats']['costs']> {
   const stats = { total: rows.length, created: 0, errors: 0 }
-  
+
   const addLog = (level: ImportLogEntry['level'], message: string, details?: any) => {
     logs.push({ level, message, timestamp: new Date().toISOString(), details })
   }
   const logDebug = (msg: string, details?: any) => addLog('debug', msg, details)
 
   const ticketCostsProcessed = new Map<number, Set<string>>()
+  const pendingCosts: Array<{ ref: string; ticketId: number; payload: Record<string, unknown> }> = []
 
+  // Phase 1 : construction des payloads (déduplication)
   for (const row of rows) {
-    logDebug(`--- Traitement coût pour ticket Ref#${row.Num_Ticket} ---`)
-
-    const ref = row.Num_Ticket
+    const ref      = row.Num_Ticket
     const ticketId = refToGlpiId.get(ref)
 
     if (!ticketId) {
@@ -730,10 +822,8 @@ async function importCosts(
       continue
     }
 
-    if (!ticketCostsProcessed.has(ticketId)) {
-      ticketCostsProcessed.set(ticketId, new Set())
-    }
-    
+    if (!ticketCostsProcessed.has(ticketId)) ticketCostsProcessed.set(ticketId, new Set())
+
     const costKey = `${row.Duration_second}|${row.Time_Cost}|${row.Fixed_Cost}`
     if (ticketCostsProcessed.get(ticketId)!.has(costKey)) {
       addLog('info', `[Coût] Doublon ignoré pour Ticket#${ticketId} (Ref#${ref})`)
@@ -741,30 +831,52 @@ async function importCosts(
       continue
     }
 
-    try {
-      const actiontime  = parseInt(row.Duration_second, 10) || 0
-      const cost_time   = parseFloat(row.Time_Cost.replace(',', '.')) || 0
-      const cost_fixed  = parseFloat(row.Fixed_Cost.replace(',', '.')) || 0
-      const cost_total  = cost_time + cost_fixed
+    const actiontime = parseInt(row.Duration_second, 10) || 0
+    const cost_time  = parseFloat(row.Time_Cost.replace(',', '.')) || 0
+    const cost_fixed = parseFloat(row.Fixed_Cost.replace(',', '.')) || 0
 
-      logDebug(`[Coût] Durée=${actiontime}s, Coût horaire=${cost_time}, Coût fixe=${cost_fixed}, Total=${cost_total}`)
+    logDebug(`[Coût] Préparation Ref#${ref}: durée=${actiontime}s, temps=${cost_time}, fixe=${cost_fixed}`)
+    ticketCostsProcessed.get(ticketId)!.add(costKey)
 
-      await glpiClient.post('/TicketCost', {
-        input: {
-          tickets_id: ticketId,
-          name:       `Coût import Ref#${ref}`,
-          actiontime,
-          cost_time,
-          cost_fixed,
-          cost_total,
-        },
-      })
-      
-      ticketCostsProcessed.get(ticketId)!.add(costKey)
-      addLog('success', `[Coût] Ticket#${ticketId} (Ref#${ref}) : durée=${actiontime}s, temps=${cost_time}, fixe=${cost_fixed}`)
-      stats.created++
-    } catch (e: any) {
-      addLog('error', `[Coût] Erreur pour Ref#${ref} (Ticket#${ticketId}) : ${e.message}`, e.response?.data)
+    pendingCosts.push({
+      ref,
+      ticketId,
+      payload: {
+        tickets_id: ticketId,
+        name:       `Coût import Ref#${ref}`,
+        actiontime,
+        cost_time,
+        cost_fixed,
+        cost_total: cost_time + cost_fixed,
+      },
+    })
+  }
+
+  if (pendingCosts.length === 0) return stats
+
+  // Phase 2 : envoi batch coûts
+  addLog('info', `[Coût] Envoi batch API: ${pendingCosts.length} coût(s)`)
+
+  try {
+    const { data } = await glpiClient.post<Array<{ id: number; message?: string }>>('/TicketCost', {
+      input: pendingCosts.map(c => c.payload),
+    })
+
+    const results = Array.isArray(data) ? data : [data]
+    results.forEach((result, idx) => {
+      const { ref, ticketId } = pendingCosts[idx]
+      if (result?.id) {
+        addLog('success', `[Coût] Ticket#${ticketId} (Ref#${ref}) créé (ID=${result.id})`)
+        stats.created++
+      } else {
+        addLog('error', `[Coût] Échec pour Ref#${ref}: ${result?.message || 'erreur inconnue'}`)
+        stats.errors++
+      }
+    })
+  } catch (e: any) {
+    addLog('error', `[Coût] Erreur batch: ${e.message}`, e.response?.data)
+    for (const { ref } of pendingCosts) {
+      addLog('error', `[Coût] Ref#${ref} non créé (erreur batch)`)
       stats.errors++
     }
   }
@@ -1079,14 +1191,41 @@ export const importService = {
       photosStats = await importPhotos(photosZip, logs, nameToIdCache)
     }
 
-    progress(100, 'Import terminé')
-    log('info', `─── Import terminé - ${userStats.created} utilisateur(s) créé(s) ───`)
-
-    const hasErrors = assetsStats.errors > 0 || ticketsStats.errors > 0 || 
+    const hasErrors = assetsStats.errors > 0 || ticketsStats.errors > 0 ||
                       costsStats.errors > 0 || photosStats.errors > 0 || userStats.errors > 0
 
+    if (hasErrors) {
+      log('error', '─── Erreurs détectées — Annulation de l\'import ───')
+      progress(88, 'Rollback en cours — réinitialisation des données...')
+
+      try {
+        await resetService.resetDatabase()
+        log('success', '─── Réinitialisation terminée — Aucune donnée conservée ───')
+      } catch (resetErr: any) {
+        log('error', `Erreur lors de la réinitialisation : ${resetErr.message}`, resetErr.response?.data)
+      }
+
+      progress(100, 'Import annulé — données réinitialisées')
+      return {
+        success: false,
+        rolledBack: true,
+        logs,
+        stats: {
+          assets:  assetsStats,
+          tickets: ticketsStats,
+          costs:   costsStats,
+          photos:  photosStats,
+          users:   userStats,
+        },
+      }
+    }
+
+    progress(100, 'Import terminé')
+    log('info', `─── Import terminé — ${userStats.created} utilisateur(s) créé(s) ───`)
+
     return {
-      success: !hasErrors,
+      success: true,
+      rolledBack: false,
       logs,
       stats: {
         assets:  assetsStats,

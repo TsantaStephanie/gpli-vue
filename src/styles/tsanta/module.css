@@ -1,0 +1,171 @@
+/* ============================================================
+   MODULE — styles partagés : .module-view, .mv-header, filtres,
+   onglets, icônes colorées, état vide
+   Importé via global.css (non-scoped)
+   ============================================================ */
+
+/* ── Module view container ──────────────────────────────────── */
+.module-view {
+  max-width: 1400px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.mv-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.mv-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+}
+
+.mv-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon-blue   { background: var(--c-primary-lt); color: var(--c-primary); }
+.icon-green  { background: var(--c-success-lt); color: var(--c-success); }
+.icon-orange { background: var(--c-warning-lt); color: var(--c-warning); }
+.icon-cyan   { background: var(--c-info-lt);    color: var(--c-info); }
+.icon-purple { background: var(--c-purple-lt);  color: var(--c-purple); }
+.icon-red    { background: var(--c-danger-lt);  color: var(--c-danger); }
+.icon-gray   { background: #f1f5f9; color: var(--c-text-2); }
+
+.mv-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: -.015em;
+}
+
+.mv-sub {
+  font-size: .75rem;
+  color: var(--c-text-3);
+  margin-top: .125rem;
+}
+
+.mv-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.result-count {
+  font-size: .8125rem;
+  color: var(--c-text-3);
+  margin-right: .125rem;
+}
+
+/* ── Filters card ────────────────────────────────────────────── */
+.filters-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.125rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: flex-end;
+  box-shadow: var(--shadow-sm);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  min-width: 140px;
+  flex: 1;
+}
+
+.filter-group label {
+  font-size: .6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--c-text-3);
+}
+
+.checkbox-filter {
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  font-size: .8125rem;
+  color: var(--c-text-2);
+  cursor: pointer;
+  align-self: flex-end;
+  margin-bottom: .25rem;
+}
+
+.checkbox-filter input { width: auto; height: auto; }
+
+/* ── Filter tabs ─────────────────────────────────────────────── */
+.filter-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.tab {
+  padding: .3rem .75rem;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.tab:hover   { color: var(--c-text); }
+.tab.active  { background: var(--c-card); color: var(--c-text); box-shadow: var(--shadow-sm); }
+
+/* ── Empty module ────────────────────────────────────────────── */
+.empty-module {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  padding: 3rem;
+  text-align: center;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+}
+
+.em-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
+.empty-module h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.empty-module p {
+  font-size: .8125rem;
+  color: var(--c-text-3);
+  max-width: 280px;
+}

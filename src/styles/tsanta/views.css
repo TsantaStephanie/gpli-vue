@@ -1,0 +1,136 @@
+/* ============================================================
+   VIEWS — styles génériques pour les pages sans fichier dédié
+   (ResetView, SyncView, TicketCreateView, TicketEditView...)
+   ============================================================ */
+
+/* ── Page wrapper générique ──────────────────────────────────── */
+.view-page {
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Form page (ticket create, edit, reset) ──────────────────── */
+.form-page {
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: 1.25rem;
+  padding-bottom: .875rem;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .875rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.form-group.full { grid-column: 1 / -1; }
+
+.form-group label {
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+
+.form-group .hint {
+  font-size: .6875rem;
+  color: var(--c-text-3);
+}
+
+.form-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: flex-end;
+  padding-top: .75rem;
+  border-top: 1px solid var(--c-border);
+  margin-top: .25rem;
+}
+
+/* ── Section card ────────────────────────────────────────────── */
+.section-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.section-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .875rem 1.125rem;
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-bg);
+}
+
+.section-card-header h3 {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.section-card-body { padding: 1.125rem; }
+
+/* ── Info banner ─────────────────────────────────────────────── */
+.info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .875rem 1rem;
+  background: var(--c-primary-lt);
+  border: 1px solid rgba(59,130,246,.2);
+  border-radius: var(--radius);
+  font-size: .8125rem;
+  color: var(--c-primary-dk);
+}
+
+.warn-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .875rem 1rem;
+  background: var(--c-warning-lt);
+  border: 1px solid rgba(245,158,11,.2);
+  border-radius: var(--radius);
+  font-size: .8125rem;
+  color: #92400e;
+}
+
+/* ── Page title ──────────────────────────────────────────────── */
+.page-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: -.025em;
+}
+
+.page-subtitle {
+  font-size: .8125rem;
+  color: var(--c-text-2);
+  margin-top: .2rem;
+}

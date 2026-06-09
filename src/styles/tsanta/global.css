@@ -1,0 +1,105 @@
+/* ============================================================
+   GLOBAL — reset, variables, typographie, animations
+   Importé dans main.ts (non-scoped → appliqué partout)
+   ============================================================ */
+
+@import './components.css';
+@import './module.css';
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Design tokens ─────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --c-primary:    #3b82f6;
+  --c-primary-dk: #2563eb;
+  --c-primary-lt: #eff6ff;
+
+  /* Semantic */
+  --c-success:    #22c55e;
+  --c-success-lt: #dcfce7;
+  --c-warning:    #f59e0b;
+  --c-warning-lt: #fef3c7;
+  --c-danger:     #ef4444;
+  --c-danger-lt:  #fee2e2;
+  --c-info:       #06b6d4;
+  --c-info-lt:    #cffafe;
+  --c-purple:     #8b5cf6;
+  --c-purple-lt:  #ede9fe;
+  --c-yellow-lt:  #fef9c3;
+
+  /* Neutrals */
+  --c-text:    #0f172a;
+  --c-text-2:  #475569;
+  --c-text-3:  #94a3b8;
+  --c-border:  #e2e8f0;
+  --c-bg:      #f8fafc;
+  --c-card:    #ffffff;
+
+  /* Sidebar */
+  --sidebar-bg:  #0f172a;
+  --sidebar-item: #94a3b8;
+  --sidebar-w:   240px;
+  --sidebar-wc:  60px;
+
+  /* Layout */
+  --topbar-h:  56px;
+  --radius:    10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  --shadow:    0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.1), 0 4px 6px -2px rgba(0,0,0,.05);
+
+  /* Typography */
+  --font:      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ── Base ──────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--c-text);
+  background: var(--c-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app { height: 100%; }
+
+a    { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; font-size: inherit; }
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar            { width: 5px; height: 5px; }
+::-webkit-scrollbar-track      { background: transparent; }
+::-webkit-scrollbar-thumb      { background: var(--c-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover{ background: var(--c-text-3); }
+
+/* ── Animations ────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.spin-icon  { animation: spin 0.75s linear infinite; display: inline-block; }
+.animate-in { animation: fadeUp 0.22s ease both; }
+
+/* ── Page transition ───────────────────────────────────────── */
+.page-enter-active,
+.page-leave-active  { transition: opacity .18s ease, transform .18s ease; }
+.page-enter-from    { opacity: 0; transform: translateY(6px); }
+.page-leave-to      { opacity: 0; transform: translateY(-6px); }

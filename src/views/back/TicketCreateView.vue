@@ -164,5 +164,5 @@ const submitTicket = async () => {
 </template>
 
 <style scoped>
-@import '../../styles/module.css';
+@import '@/styles/tsanta/module.css';
 </style>

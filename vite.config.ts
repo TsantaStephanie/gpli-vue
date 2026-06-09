@@ -19,6 +19,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Proxy pour les photos d'actifs GLPI (picture_front)
+      '/front/document.send.php': {
+        target: 'http://localhost:8082',
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 })

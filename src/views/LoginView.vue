@@ -100,5 +100,5 @@ async function handleLogin() {
 </script>
 
 <style scoped>
-@import '../styles/LoginView.css';
+@import '../styles/tsanta/LoginView.css';
 </style>

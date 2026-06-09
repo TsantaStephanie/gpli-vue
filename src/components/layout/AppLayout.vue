@@ -69,5 +69,5 @@ const apiOnline = ref(true)
 </script>
 
 <style scoped>
-@import '../../styles/AppLayout.css';
+@import '../../styles/tsanta/AppLayout.css';
 </style>

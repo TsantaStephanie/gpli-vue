@@ -51,11 +51,11 @@ export async function getAssetStatusById(itemtype: string, id: number): Promise<
       status = statusField;
     } else if (typeof statusField === 'number') {
       const statusMap: Record<number, string> = {
-        1: 'En service',
+        1: 'En production',
         2: 'En stock',
         3: 'Réformé',
         4: 'En maintenance',
-        5: 'En panne'
+        5: 'En panne',
       };
       status = statusMap[statusField] || 'Inconnu';
     }
@@ -69,8 +69,10 @@ export async function getAssetStatusById(itemtype: string, id: number): Promise<
 
 
 function buildBaseParams(params: AssetSearchParams): Record<string, unknown> {
+  // Ne pas passer is_deleted=0 : GLPI exclut déjà les supprimés par défaut.
+  // is_deleted=0 active la vue "corbeille" dans certaines versions GLPI → 0 résultats.
   const q: Record<string, unknown> = {
-    is_deleted: params.includeDeleted ? undefined : 0,
+    is_deleted: params.includeDeleted ? 1 : undefined,
   };
   return Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined));
 }
@@ -81,6 +83,8 @@ export async function fetchAllComputers(params: AssetSearchParams = {}): Promise
   const raw = await fetchAllPaginated<any>(
     GLPI_ENDPOINTS.COMPUTER,
     buildBaseParams(params),
+    50,
+    120_000,
   );
   return raw.map(item => mapRawToAsset(item, 'Computer'));
 }
@@ -97,6 +101,8 @@ export async function fetchAllMonitors(params: AssetSearchParams = {}): Promise<
   const raw = await fetchAllPaginated<any>(
     GLPI_ENDPOINTS.MONITOR,
     buildBaseParams(params),
+    50,
+    120_000,
   );
   return raw.map(item => mapRawToAsset(item, 'Monitor'));
 }
@@ -113,6 +119,8 @@ export async function fetchAllPrinters(params: AssetSearchParams = {}): Promise<
   const raw = await fetchAllPaginated<any>(
     GLPI_ENDPOINTS.PRINTER,
     buildBaseParams(params),
+    50,
+    120_000,
   );
   return raw.map(item => mapRawToAsset(item, 'Printer'));
 }
@@ -378,7 +386,7 @@ export async function searchAssetsMultiCriteria(type: string, nameFilter?: strin
   // field 19 is usually date_mod
   params['forcedisplay[3]'] = '19';
 
-  const raw = await fetchAllPaginated<Record<string, any>>(`/search/${itemType}`, params);
+  const raw = await fetchAllPaginated<Record<string, any>>(`/search/${itemType}`, params, 50, 120_000);
   
   // 4. Mapper les résultats en format Asset
   return raw.map(item => {

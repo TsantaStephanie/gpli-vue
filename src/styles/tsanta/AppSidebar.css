@@ -1,0 +1,163 @@
+/* ============================================================
+   SIDEBAR — menu de navigation vertical
+   ============================================================ */
+
+.sidebar {
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  transition: width .25s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+
+.sidebar.collapsed { width: var(--sidebar-wc); }
+
+/* ── Brand ───────────────────────────────────────────────────── */
+.sidebar-brand {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.brand-text {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.brand-dot {
+  width: 28px;
+  height: 28px;
+  background: var(--c-primary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  font-size: .6875rem;
+  font-weight: 800;
+  letter-spacing: .5px;
+}
+
+.brand-name {
+  font-size: .9375rem;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: -.01em;
+}
+
+/* ── Navigation ──────────────────────────────────────────────── */
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: .75rem 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+
+.nav-section {
+  padding: 0 .625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: .25rem;
+}
+
+.nav-section + .nav-section {
+  padding-top: .625rem;
+  border-top: 1px solid rgba(255,255,255,.06);
+  margin-top: .25rem;
+}
+
+/* Nav item */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .5rem .625rem;
+  border-radius: 8px;
+  color: var(--sidebar-item);
+  font-size: .8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+  position: relative;
+  border: none;
+  background: transparent;
+  width: 100%;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: rgba(255,255,255,.07);
+  color: #f1f5f9;
+}
+
+.nav-item.active {
+  background: rgba(59,130,246,.18);
+  color: #93c5fd;
+}
+
+.nav-item.active .nav-icon { color: var(--c-primary); }
+
+/* Icon */
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+/* Label */
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Count badge */
+.nav-count {
+  background: rgba(59,130,246,.25);
+  color: #93c5fd;
+  font-size: .6875rem;
+  font-weight: 600;
+  padding: .1rem .375rem;
+  border-radius: 100px;
+  flex-shrink: 0;
+}
+
+/* ── Footer ──────────────────────────────────────────────────── */
+.sidebar-footer {
+  padding: .625rem;
+  border-top: 1px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+
+.collapse-btn { width: 100%; }
+
+/* ── Transitions label ───────────────────────────────────────── */
+.label-enter-active,
+.label-leave-active { transition: opacity .15s ease, transform .15s ease; }
+.label-enter-from,
+.label-leave-to     { opacity: 0; transform: translateX(-8px); }

@@ -1,0 +1,125 @@
+/* ============================================================
+   ASSETS LIST (back/AssetsView.vue)
+   ============================================================ */
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.assets-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Table container ─────────────────────────────────────────── */
+.table-container {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.table-container table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8125rem;
+}
+
+.table-container thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table-container th {
+  padding: .625rem .875rem;
+  text-align: left;
+  font-size: .6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--c-text-3);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-bg);
+  white-space: nowrap;
+}
+
+.table-container td {
+  padding: .75rem .875rem;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  vertical-align: middle;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-container tbody tr:last-child td { border-bottom: none; }
+
+.table-container tbody tr {
+  cursor: pointer;
+  transition: background .1s;
+}
+
+.table-container tbody tr:hover   { background: #fafbfc; }
+.table-container tbody tr.selected { background: #eff6ff; }
+.table-container tbody tr.selected td { color: var(--c-text); }
+
+/* Badge types asset */
+.badge.badge-computer  { background: #dbeafe; color: #1d4ed8; }
+.badge.badge-monitor   { background: #dcfce7; color: #15803d; }
+.badge.badge-printer   { background: #fef3c7; color: #b45309; }
+.badge.badge-phone     { background: var(--c-purple-lt); color: #6d28d9; }
+.badge.badge-network   { background: var(--c-info-lt); color: #0891b2; }
+
+/* ── Asset detail panel ──────────────────────────────────────── */
+.asset-detail {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  gap: .75rem;
+}
+
+.detail-header h2 {
+  font-size: .9375rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-top: .375rem;
+}
+
+/* Definition list */
+dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .375rem 1rem;
+  margin: 1rem 0;
+  font-size: .8125rem;
+}
+
+dt {
+  color: var(--c-text-3);
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+dd {
+  color: var(--c-text);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.full-width { width: 100%; justify-content: center; }

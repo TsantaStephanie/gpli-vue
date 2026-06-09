@@ -1,0 +1,107 @@
+/* ============================================================
+   ASSETS VIEW — front office (front/AssetsView.vue)
+   Structure similaire à AssetsList.css mais sans sidebar detail
+   ============================================================ */
+
+.assets-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Grille de cartes asset */
+.assets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: .875rem;
+}
+
+.asset-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: .625rem;
+  transition: box-shadow .15s, transform .15s;
+  cursor: pointer;
+}
+
+.asset-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.asset-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.asset-card-name {
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-card-id {
+  font-family: var(--font-mono);
+  font-size: .6875rem;
+  color: var(--c-text-3);
+  margin-top: .125rem;
+}
+
+.asset-card-meta {
+  font-size: .75rem;
+  color: var(--c-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+}
+
+.asset-card-action {
+  margin-top: .25rem;
+}
+
+/* Table view */
+.assets-table-wrap {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.assets-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8125rem;
+}
+
+.assets-table-wrap th {
+  padding: .625rem .875rem;
+  text-align: left;
+  font-size: .6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--c-text-3);
+  border-bottom: 1px solid var(--c-border);
+  background: var(--c-bg);
+}
+
+.assets-table-wrap td {
+  padding: .75rem .875rem;
+  border-bottom: 1px solid var(--c-border);
+  color: var(--c-text-2);
+  vertical-align: middle;
+}
+
+.assets-table-wrap tbody tr:last-child td { border-bottom: none; }
+.assets-table-wrap tbody tr:hover          { background: #fafbfc; }
