@@ -39,33 +39,39 @@ async function fetchAllIds(itemtype: string): Promise<number[]> {
   return [...new Set(ids)];
 }
 
-const resetDatabase = async () => {
+type ProgressCallback = (itemtype: string, status: 'processing' | 'done' | 'error', count: number) => void
+
+const resetDatabase = async (onProgress?: ProgressCallback) => {
   const results = [];
 
   for (const itemtype of itemtypesToDelete) {
+    onProgress?.(itemtype, 'processing', 0);
     try {
       const ids = await fetchAllIds(itemtype);
 
       if (ids.length === 0) {
-        results.push({ itemtype, success: true, message: 'Aucun élément à supprimer.' });
+        onProgress?.(itemtype, 'done', 0);
+        results.push({ itemtype, success: true, count: 0, message: 'Aucun élément à supprimer.' });
         continue;
       }
 
-      // Suppression définitive — force_purge=1 en query param + timeout élevé
       const response = await glpiClient.delete(`/${itemtype}`, {
         params: { force_purge: 1 },
         data: { input: ids.map(id => ({ id })) },
         timeout: RESET_TIMEOUT,
       });
 
+      onProgress?.(itemtype, 'done', ids.length);
       results.push({
         itemtype,
         success: true,
+        count: ids.length,
         message: `${ids.length} élément(s) supprimé(s) définitivement.`,
         data: response.data,
       });
     } catch (error: any) {
-      results.push({ itemtype, success: false, error });
+      onProgress?.(itemtype, 'error', 0);
+      results.push({ itemtype, success: false, count: 0, error });
     }
   }
 

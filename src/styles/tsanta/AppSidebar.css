@@ -23,40 +23,26 @@
   height: var(--topbar-h);
   display: flex;
   align-items: center;
+  gap: .75rem;
   padding: 0 1rem;
   border-bottom: 1px solid rgba(255,255,255,.06);
   flex-shrink: 0;
   overflow: hidden;
 }
 
-.brand-text {
-  display: flex;
-  align-items: center;
-  gap: .625rem;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.brand-dot {
-  width: 28px;
-  height: 28px;
-  background: var(--c-primary);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.brand-logo {
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  color: #fff;
-  font-size: .6875rem;
-  font-weight: 800;
-  letter-spacing: .5px;
+  object-fit: contain;
 }
 
 .brand-name {
-  font-size: .9375rem;
+  font-size: 1.125rem;
   font-weight: 700;
   color: #f8fafc;
   letter-spacing: -.01em;
+  white-space: nowrap;
 }
 
 /* ── Navigation ──────────────────────────────────────────────── */

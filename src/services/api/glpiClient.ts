@@ -31,15 +31,15 @@ const AUTH_MODE  = import.meta.env.VITE_GLPI_AUTH_MODE  as 'token' | 'credential
 const SESSION_TOKEN_KEY = 'glpi_session_token';
 
 export function getSessionToken(): string | null {
-  return sessionStorage.getItem(SESSION_TOKEN_KEY);
+  return localStorage.getItem(SESSION_TOKEN_KEY);
 }
 
 export function setSessionToken(token: string): void {
-  sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+  localStorage.setItem(SESSION_TOKEN_KEY, token);
 }
 
 export function clearSessionToken(): void {
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  localStorage.removeItem(SESSION_TOKEN_KEY);
 }
 
 // ─── Instance Axios ───────────────────────────────────────────────────────────

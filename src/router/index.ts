@@ -117,10 +117,10 @@ const router = createRouter({
   ],
 })
 
-// Guard : rediriger vers /login si pas de session
+// Guard : rediriger vers /login si pas de session, en mémorisant la route cible
 router.beforeEach((to) => {
   if (!to.meta.public && !getSessionToken()) {
-    return { name: 'login' }
+    return { name: 'login', query: { redirect: to.fullPath } }
   }
 })
 

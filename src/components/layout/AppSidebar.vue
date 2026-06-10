@@ -3,10 +3,9 @@
 
     <!-- ─── Brand ─────────────────────────────────────────────────────────────── -->
     <div class="sidebar-brand">
+      <img src="/favicon.svg" class="brand-logo" alt="GLPI" />
       <Transition name="label">
-        <div v-if="!collapsed" class="brand-text">
-          <span class="brand-name">GLPI</span>
-        </div>
+        <span v-if="!collapsed" class="brand-name">GLPI</span>
       </Transition>
     </div>
 
