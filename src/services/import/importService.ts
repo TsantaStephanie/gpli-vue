@@ -1228,9 +1228,9 @@ async function importPhotos(
 
 export const importService = {
   async runFullImport(
-    sheet1: File,
-    sheet2: File,
-    sheet3: File,
+    sheet1: File | null,
+    sheet2: File | null,
+    sheet3: File | null,
     photosZip?: File | null,
     onProgress?: (pct: number, step: string) => void,
   ): Promise<ImportResult> {
@@ -1247,31 +1247,50 @@ export const importService = {
     log('info', '─── Début de l\'import ───')
     progress(0, 'Lecture des fichiers CSV...')
 
+    // ── Lecture des fichiers (null = non fourni, '' = vide) ──────────────────
     const [csv1, csv2, csv3] = await Promise.all([
-      readFileAsText(sheet1),
-      readFileAsText(sheet2),
-      readFileAsText(sheet3),
+      sheet1 ? readFileAsText(sheet1) : null,
+      sheet2 ? readFileAsText(sheet2) : null,
+      sheet3 ? readFileAsText(sheet3) : null,
     ])
 
-    const assetsRows   = parseCSV(csv1) as unknown as AssetRow[]
-    const ticketsRows  = parseCSV(csv2) as unknown as TicketRow[]
-    const costsRows    = parseCSV(csv3) as unknown as CostRow[]
+    // ── Parsing + validation ─────────────────────────────────────────────────
+    const assetsRows  = csv1 != null ? parseCSV(csv1) as unknown as AssetRow[]  : null
+    const ticketsRows = csv2 != null ? parseCSV(csv2) as unknown as TicketRow[] : null
+    const costsRows   = csv3 != null ? parseCSV(csv3) as unknown as CostRow[]   : null
 
-    log('info', `Feuille 1 : ${assetsRows.length} ligne(s) d'actifs`)
-    log('info', `Feuille 2 : ${ticketsRows.length} ligne(s) de tickets`)
-    log('info', `Feuille 3 : ${costsRows.length} ligne(s) de coûts`)
+    if (!sheet1) log('info',    'Feuille 1 (Actifs) non fournie — étape ignorée')
+    else if (!assetsRows?.length)  log('warning', 'Feuille 1 (Actifs) est vide — aucune donnée à importer')
+    else log('info', `Feuille 1 : ${assetsRows.length} ligne(s) d'actifs`)
 
+    if (!sheet2) log('info',    'Feuille 2 (Tickets) non fournie — étape ignorée')
+    else if (!ticketsRows?.length) log('warning', 'Feuille 2 (Tickets) est vide — aucune donnée à importer')
+    else log('info', `Feuille 2 : ${ticketsRows.length} ligne(s) de tickets`)
+
+    if (!sheet3) log('info',    'Feuille 3 (Coûts) non fournie — étape ignorée')
+    else if (!costsRows?.length)   log('warning', 'Feuille 3 (Coûts) est vide — aucune donnée à importer')
+    else log('info', `Feuille 3 : ${costsRows.length} ligne(s) de coûts`)
+
+    if (sheet3 && !sheet2)
+      log('warning', 'Feuille 3 fournie sans Feuille 2 — les coûts ne pourront pas être liés à des tickets')
+
+    // ── Import des actifs ────────────────────────────────────────────────────
     progress(10, 'Import des actifs...')
-    log('info', '─── Import Actifs ───')
-    const assetsStats = await importAssets(assetsRows, logs, nameToIdCache, userStats)
+    const assetsStats = assetsRows?.length
+      ? (log('info', '─── Import Actifs ───'), await importAssets(assetsRows, logs, nameToIdCache, userStats))
+      : { total: 0, created: 0, skipped: 0, errors: 0 }
 
+    // ── Import des tickets ───────────────────────────────────────────────────
     progress(50, 'Import des tickets...')
-    log('info', '─── Import Tickets ───')
-    const ticketsStats = await importTickets(ticketsRows, logs, nameToIdCache, refToGlpiId)
+    const ticketsStats = ticketsRows?.length
+      ? (log('info', '─── Import Tickets ───'), await importTickets(ticketsRows, logs, nameToIdCache, refToGlpiId))
+      : { total: 0, created: 0, skipped: 0, errors: 0 }
 
+    // ── Import des coûts ─────────────────────────────────────────────────────
     progress(75, 'Import des coûts...')
-    log('info', '─── Import Coûts ───')
-    const costsStats = await importCosts(costsRows, logs, refToGlpiId)
+    const costsStats = costsRows?.length
+      ? (log('info', '─── Import Coûts ───'), await importCosts(costsRows, logs, refToGlpiId))
+      : { total: 0, created: 0, errors: 0 }
 
     let photosStats = { total: 0, uploaded: 0, errors: 0 }
     if (photosZip) {

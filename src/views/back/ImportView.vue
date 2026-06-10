@@ -21,7 +21,9 @@ const result      = ref<ImportResult | null>(null)
 const logFilter   = ref<'all' | 'error' | 'warning' | 'success'>('all')
 
 // ─── Computed ─────────────────────────────────────────────────────────────────
-const canImport = computed(() => sheet1.value && sheet2.value && sheet3.value && !importing.value)
+const canImport = computed(() =>
+  (sheet1.value || sheet2.value || sheet3.value) && !importing.value
+)
 
 const filteredLogs = computed<ImportLogEntry[]>(() => {
   if (!result.value) return []
@@ -52,7 +54,7 @@ function onFileChange(event: Event, target: 'sheet1' | 'sheet2' | 'sheet3' | 'ph
 
 // ─── Lancement import ─────────────────────────────────────────────────────────
 async function runImport() {
-  if (!sheet1.value || !sheet2.value || !sheet3.value) return
+  if (!sheet1.value && !sheet2.value && !sheet3.value) return
 
   importing.value = true
   result.value = null
@@ -60,9 +62,9 @@ async function runImport() {
 
   try {
     result.value = await importService.runFullImport(
-      sheet1.value,
-      sheet2.value,
-      sheet3.value,
+      sheet1.value,   // null si non fourni
+      sheet2.value,   // null si non fourni
+      sheet3.value,   // null si non fourni
       photosZip.value,
       (pct, step) => {
         progress.value = pct
@@ -152,7 +154,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 1 — Actifs <span class="required">*</span></p>
+              <p class="file-label">Feuille 1 — Actifs <span class="optional">(optionnel)</span></p>
               <p class="file-desc">Name, Status, Location, Manufacturer, Item_Type, Model, Inventory_Number, User</p>
             </div>
           </div>
@@ -170,7 +172,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 2 — Tickets <span class="required">*</span></p>
+              <p class="file-label">Feuille 2 — Tickets <span class="optional">(optionnel)</span></p>
               <p class="file-desc">Ref_Ticket, Date, Heure, Type, Titre, Description, Status, Priority, Items</p>
             </div>
           </div>
@@ -188,7 +190,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 0 0 4H8"/><path d="M12 18v2m0-18v2"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 3 — Coûts <span class="required">*</span></p>
+              <p class="file-label">Feuille 3 — Coûts <span class="optional">(optionnel)</span></p>
               <p class="file-desc">Num_Ticket, Duration_second, Time_Cost, Fixed_Cost</p>
             </div>
           </div>
@@ -226,7 +228,7 @@ function formatDetails(details: any): string {
           <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           {{ importing ? 'Import en cours...' : 'Lancer l\'import' }}
         </button>
-        <p class="import-hint" v-if="!canImport && !importing">Les 3 fichiers CSV sont obligatoires</p>
+        <p class="import-hint" v-if="!canImport && !importing">Fournis au moins un fichier CSV pour lancer l'import</p>
       </div>
 
       <!-- Barre de progression -->
