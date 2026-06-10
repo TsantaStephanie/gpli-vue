@@ -86,7 +86,7 @@ glpiClient.interceptors.response.use(
       clearSessionToken()
     }
 
-    console.error(`[GLPI API Error ${status}]`, message)
+    console.error(`[GLPI API Error ${status}]`, error.response.data)
     return Promise.reject(new Error(`[${status}] ${message}`))
   },
 );
