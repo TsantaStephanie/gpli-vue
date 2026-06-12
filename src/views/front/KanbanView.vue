@@ -1,5 +1,5 @@
-a<script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
@@ -10,6 +10,14 @@ const router  = useRouter()
 const loading = ref(true)
 const loadError = ref('')
 const allTickets = ref<Ticket[]>([])
+
+// ── Langue (labels de statuts uniquement) ──────────────────────
+const lang = ref<'fr' | 'mg'>('fr')
+
+const STATUS_LABELS: Record<'fr' | 'mg', Record<number, string>> = {
+  fr: { 1: 'Nouveau', 2: 'En cours',  3: 'Planifié',  4: 'En attente', 5: 'Résolu',  6: 'Fermé'   },
+  mg: { 1: 'Vaovao',  2: 'Mandeha',   3: 'Voatokana', 4: 'Miandry',    5: 'Voavita', 6: 'Voakidy' },
+}
 
 // ── Paramètres Kanban (couleurs + labels malgaches) ─────────
 const colSettings = ref<Record<string, KanbanSetting>>({})
@@ -44,7 +52,7 @@ const COLUMNS = [
   {
     id: 'progress',
     label: 'En cours',
-    statuses: [2, 3, 4] as number[],
+    statuses: [2] as number[],
     targetStatus: 2,
     color: 'orange',
     needsDialog: false,
@@ -52,8 +60,8 @@ const COLUMNS = [
   {
     id: 'done',
     label: 'Terminé',
-    statuses: [5, 6] as number[],
-    targetStatus: 5,
+    statuses: [6] as number[],
+    targetStatus: 6,
     color: 'green',
     needsDialog: true,   // Demande une note de résolution
   },
@@ -203,18 +211,15 @@ const PRIORITY_META: Record<number, { label: string; color: string }> = {
   6: { label: 'Majeure',    color: 'red'    },
 }
 
-const STATUS_META: Record<number, { label: string; color: string }> = {
-  1: { label: 'Nouveau',    color: 'blue'   },
-  2: { label: 'En cours',   color: 'orange' },
-  3: { label: 'Planifié',   color: 'cyan'   },
-  4: { label: 'En attente', color: 'gray'   },
-  5: { label: 'Résolu',     color: 'green'  },
-  6: { label: 'Fermé',      color: 'slate'  },
-}
-
 function typeMeta(t: number)     { return TYPE_META[t]     ?? { label: 'Inconnu', color: 'gray' } }
 function priorityMeta(p: number) { return PRIORITY_META[p] ?? { label: '-',       color: 'gray' } }
-function statusMeta(s: number)   { return STATUS_META[s]   ?? { label: 'Inconnu', color: 'gray' } }
+function statusMeta(s: number) {
+  const colors: Record<number, string> = { 1: 'blue', 2: 'orange', 3: 'cyan', 4: 'gray', 5: 'green', 6: 'slate' }
+  return {
+    label: STATUS_LABELS[lang.value][s] ?? 'Inconnu',
+    color: colors[s] ?? 'gray',
+  }
+}
 
 function relativeDate(d?: string) {
   if (!d) return '—'
@@ -247,6 +252,10 @@ onMounted(() => { load(); loadSettings() })
         <p class="kanban-sub">Glissez les tickets d'une colonne à l'autre pour changer leur statut</p>
       </div>
       <div class="kanban-actions">
+        <div class="lang-toggle">
+          <button :class="{ active: lang === 'fr' }" @click="lang = 'fr'">FR</button>
+          <button :class="{ active: lang === 'mg' }" @click="lang = 'mg'">MG</button>
+        </div>
         <button class="btn-refresh" @click="load" :disabled="loading">
           <svg :class="{ spin: loading }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>

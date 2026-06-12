@@ -1,0 +1,57 @@
+# Journal des modifications — gpli-vue
+# Mis à jour automatiquement à chaque nouvelle fonctionnalité
+# Format : FICHIER | LIGNES | TYPE | CODE
+# ══════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════
+FONCTIONNALITÉ : Déduplications des actifs dans Items (CSV tickets)
+PROBLÈME       : Items = ["PC-ADM-001","MN-FORM-002","MN-FORM-002"] → MN-FORM-002 lié 2 fois
+══════════════════════════════════════════════════════════════
+
+FICHIER : src/services/import/importService.ts
+LIGNES  : 918–930 (fonction parseItemsList)
+
+AVANT :
+  function parseItemsList(raw: string): string[] {
+    if (!raw) return []
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(s => s.replace(/^"|"$/g, '').trim())
+        .filter(Boolean)
+    }
+  }
+
+APRÈS :
+  function parseItemsList(raw: string): string[] {
+    if (!raw) return []
+    let items: string[]
+    try {
+      items = JSON.parse(raw)
+    } catch {
+      items = raw
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(s => s.replace(/^"|"$/g, '').trim())
+        .filter(Boolean)
+    }
+    return [...new Set(items)]   // ← déduplique avant de retourner
+  }
+
+EXPLICATION :
+  [...new Set(items)] supprime les doublons dans le tableau d'actifs.
+  Ainsi "MN-FORM-002" apparaissant deux fois ne sera lié qu'une seule fois au ticket.
+
+══════════════════════════════════════════════════════════════
+FONCTIONNALITÉ : Changement icône Paramètres Kanban dans la sidebar
+══════════════════════════════════════════════════════════════
+
+FICHIER : src/components/layout/AppSidebar.vue
+LIGNE   : 104 (propriété kanbanSettings dans l'objet icons)
+
+CHANGEMENT : icône Sliders → Engrenage (Settings)
+  kanbanSettings: `<svg ... circle cx="12" cy="12" r="3" + path engrenage ...>`
+

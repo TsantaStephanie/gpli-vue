@@ -168,7 +168,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 1 — Actifs <span class="optional">(optionnel)</span></p>
+              <p class="file-label">Feuille 1 — Actifs</p>
               <p class="file-desc">Name, Status, Location, Manufacturer, Item_Type, Model, Inventory_Number, User</p>
             </div>
           </div>
@@ -185,7 +185,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 2 — Tickets <span class="optional">(optionnel)</span></p>
+              <p class="file-label">Feuille 2 — Tickets</p>
               <p class="file-desc">Ref_Ticket, Date, Heure, Type, Titre, Description, Status, Priority, Items</p>
             </div>
           </div>
@@ -202,7 +202,7 @@ function formatDetails(details: any): string {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 0 0 4H8"/><path d="M12 18v2m0-18v2"/></svg>
             </div>
             <div>
-              <p class="file-label">Feuille 3 — Coûts <span class="optional">(optionnel)</span></p>
+              <p class="file-label">Feuille 3 — Coûts</p>
               <p class="file-desc">Num_Ticket, Duration_second, Time_Cost, Fixed_Cost</p>
             </div>
           </div>

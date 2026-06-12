@@ -49,12 +49,14 @@ const ITEM_TYPE_MAP: Record<string, string> = {
 }
 
 const TICKET_STATUS_MAP: Record<string, number> = {
-  'New':       1,
-  'Assigned':  2,
-  'Planned':   3,
-  'Pending':   4,
-  'Solved':    5,
-  'Closed':    6,
+  'New':                  1,
+  'Assigned':             2,
+  'In progress':          2,
+  'In progress (assigned)': 2,
+  'Planned':              3,
+  'Pending':              4,
+  'Solved':               5,
+  'Closed':               6,
 }
 
 /**
@@ -62,22 +64,23 @@ const TICKET_STATUS_MAP: Record<string, number> = {
  * Gère : anglais, français, insensible à la casse et aux accents.
  * Ex: "Résolu" | "résolu" | "resolu" | "Solved" | "solved" → 5
  */
-function resolveTicketStatus(raw: string): number {
-  if (!raw) return 1
+function resolveTicketStatus(raw: string): number | null {
+  if (!raw || !raw.trim()) return null
   const key = raw.trim()
-  // 1. Essai exact (valeurs déjà correctes : 'Solved', 'Closed'…)
+  // 1. Essai exact
   if (TICKET_STATUS_MAP[key] !== undefined) return TICKET_STATUS_MAP[key]
-  // 2. Correspondances explicites (FR + EN + minuscules + variantes sans accent)
+  // 2. Correspondances insensibles à la casse / accents
   const lower = key.toLowerCase()
   const map: Record<string, number> = {
     // Anglais
-    'new': 1, 'assigned': 2, 'planned': 3, 'pending': 4, 'solved': 5, 'closed': 6,
+    'new': 1, 'assigned': 2, 'in progress': 2, 'in progress (assigned)': 2,
+    'planned': 3, 'pending': 4, 'solved': 5, 'closed': 6,
     // Français avec accents
-    'nouveau': 1, 'assigné': 2, 'planifié': 3, 'en attente': 4, 'résolu': 5, 'fermé': 6,
-    // Français sans accents (CSV peut les avoir supprimés)
+    'nouveau': 1, 'assigné': 2, 'en cours': 2, 'planifié': 3, 'en attente': 4, 'résolu': 5, 'fermé': 6,
+    // Français sans accents
     'assigne': 2, 'planifie': 3, 'resolu': 5, 'ferme': 6,
   }
-  return map[lower] ?? 1
+  return map[lower] ?? null  // null = statut inconnu → erreur à l'import
 }
 
 const TICKET_PRIORITY_MAP: Record<string, number> = {
@@ -96,6 +99,60 @@ const TICKET_TYPE_MAP: Record<string, number> = {
 }
 
 // ─── Utilitaires CSV ──────────────────────────────────────────────────────────
+
+/**
+ * Sépare une ligne par ';' en respectant les guillemets.
+ * Utilisé pour éclater les lignes multi-entrées.
+ * Ex: `entree1 ; entree2` → ['entree1', 'entree2']
+ */
+function splitBySemicolon(line: string): string[] {
+  const result: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      // Guillemet doublé ("") = guillemet littéral, pas de changement d'état
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; continue }
+      inQuotes = !inQuotes
+      current += char
+    } else if (char === ';' && !inQuotes) {
+      result.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  if (current.trim()) result.push(current.trim())
+  return result
+}
+
+/**
+ * Pré-traitement : éclate les lignes contenant des ';' en lignes individuelles.
+ * Permet d'écrire plusieurs entrées sur une même ligne :
+ *   1,01/06/2026,New,"[...]" ; 1,02/06/2026,Solved,"[...]"
+ * → deux lignes distinctes traitées normalement par parseCSV.
+ * L'en-tête (ligne 1) est conservé tel quel.
+ */
+export function expandMultiEntryLines(content: string): string {
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  if (lines.length < 2) return content
+
+  const header = lines[0]
+  const expanded: string[] = [header]
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line) continue
+    const entries = splitBySemicolon(line)
+    for (const entry of entries) {
+      if (entry) expanded.push(entry)
+    }
+  }
+
+  return expanded.join('\n')
+}
 
 export function parseCSV(content: string): Record<string, string>[] {
   const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
@@ -720,22 +777,157 @@ interface TicketRow {
   Items: string
 }
 
+/**
+ * Convertit une date et une heure CSV en datetime GLPI (YYYY-MM-DD HH:MM:SS).
+ * Un seul bloc de date est actif à la fois — décommenter le format souhaité.
+ * Idem pour l'heure.
+ */
 function parseGlpiDateTime(date: string, time: string): string {
-  const [day, month, year] = date.split('/')
-  return `${year}-${month}-${day} ${time}:00`
+  const d = date.trim()
+  const t = time.trim()
+
+  // ── Parsing de la date ──────────────────────────────────────────────────────
+
+  let year = '', month = '', day = ''
+
+  // ✅ ACTIF — JJ/MM/AAAA  (ex: 25/06/2024)
+  const mFR = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (mFR) { day = mFR[1]; month = mFR[2]; year = mFR[3] }
+
+  // JJ-MM-AAAA  (ex: 25-06-2024)
+  const mDash = d.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (mDash) { day = mDash[1]; month = mDash[2]; year = mDash[3] }
+
+  // JJ.MM.AAAA  (ex: 25.06.2024)
+  const mDot = d.match(/^(\d{2})\.(\d{2})\.(\d{4})$/)
+  if (mDot) { day = mDot[1]; month = mDot[2]; year = mDot[3] }
+
+  // AAAA-MM-JJ  ISO 8601  (ex: 2024-06-25)
+  const mISO = d.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (mISO) { year = mISO[1]; month = mISO[2]; day = mISO[3] }
+
+  // AAAA/MM/JJ  (ex: 2024/06/25)
+  const mISOSlash = d.match(/^(\d{4})\/(\d{2})\/(\d{2})$/)
+  if (mISOSlash) { year = mISOSlash[1]; month = mISOSlash[2]; day = mISOSlash[3] }
+
+  // MM/JJ/AAAA  format US  (ex: 06/25/2024)
+  const mUS = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (mUS) { month = mUS[1]; day = mUS[2]; year = mUS[3] }
+
+  // JJ Mois_abrégé AAAA  (ex: 01 Janv 2026)
+  const MONTHS_SHORT: Record<string, string> = {
+    janv:'01', févr:'02', mars:'03', avr:'04', mai:'05', juin:'06',
+    juil:'07', août:'08', sept:'09', oct:'10', nov:'11', déc:'12',
+  }
+  const mShort = d.match(/^(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})$/)
+  if (mShort) {
+    const m = MONTHS_SHORT[mShort[2].toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')]
+              ?? MONTHS_SHORT[mShort[2].toLowerCase()]
+    if (m) { day = mShort[1].padStart(2,'0'); month = m; year = mShort[3] }
+  }
+
+  // JJ Mois_complet AAAA  (ex: 01 Janvier 2026)
+  const MONTHS_LONG: Record<string, string> = {
+    janvier:'01', février:'02', mars:'03', avril:'04', mai:'05', juin:'06',
+    juillet:'07', août:'08', septembre:'09', octobre:'10', novembre:'11', décembre:'12',
+  }
+  const mLong = d.match(/^(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})$/)
+  if (mLong) {
+    const m = MONTHS_LONG[mLong[2].toLowerCase()]
+    if (m) { day = mLong[1].padStart(2,'0'); month = m; year = mLong[3] }
+  }
+
+  // JJ/MM/AA  année 2 chiffres  (ex: 25/06/24)  → siècle 2000 assumé
+  const m2YSlash = d.match(/^(\d{2})\/(\d{2})\/(\d{2})$/)
+  if (m2YSlash) { day = m2YSlash[1]; month = m2YSlash[2]; year = '20' + m2YSlash[3] }
+
+  // JJ-MM-AA  année 2 chiffres  (ex: 25-06-24)
+  const m2YDash = d.match(/^(\d{2})-(\d{2})-(\d{2})$/)
+  if (m2YDash) { day = m2YDash[1]; month = m2YDash[2]; year = '20' + m2YDash[3] }
+
+  // AAAAMMJJ  compact ISO  (ex: 20240625)
+  const mCompactISO = d.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (mCompactISO) { year = mCompactISO[1]; month = mCompactISO[2]; day = mCompactISO[3] }
+
+  // JJMMAAAA  compact FR  (ex: 25062024)
+  const mCompactFR = d.match(/^(\d{2})(\d{2})(\d{4})$/)
+  if (mCompactFR) { day = mCompactFR[1]; month = mCompactFR[2]; year = mCompactFR[3] }
+
+  // JJ MonthEN AAAA  (ex: 25 Jan 2024 / 25 January 2024)
+  const MONTHS_EN: Record<string, string> = {
+    jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+    jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12',
+    january:'01', february:'02', march:'03', april:'04', june:'06',
+    july:'07', august:'08', september:'09', october:'10', november:'11', december:'12',
+  }
+  const mDayMonEN = d.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/)
+  if (mDayMonEN) {
+    const m = MONTHS_EN[mDayMonEN[2].toLowerCase()]
+    if (m) { day = mDayMonEN[1].padStart(2,'0'); month = m; year = mDayMonEN[3] }
+  }
+
+  // MonthEN JJ, AAAA  (ex: Jan 25, 2024 / January 25, 2024)
+  const mMonDayEN = d.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/)
+  if (mMonDayEN) {
+    const m = MONTHS_EN[mMonDayEN[1].toLowerCase()]
+    if (m) { month = m; day = mMonDayEN[2].padStart(2,'0'); year = mMonDayEN[3] }
+  }
+
+  // NomJourFR JJ MoisFR AAAA  (ex: lundi 25 juin 2024)
+  const MONTHS_FR_FULL: Record<string, string> = {
+    janvier:'01', février:'02', mars:'03', avril:'04', mai:'05', juin:'06',
+    juillet:'07', août:'08', septembre:'09', octobre:'10', novembre:'11', décembre:'12',
+  }
+  const mFRDay = d.match(/^(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})$/i)
+  if (mFRDay) {
+    const m = MONTHS_FR_FULL[mFRDay[2].toLowerCase()]
+    if (m) { day = mFRDay[1].padStart(2,'0'); month = m; year = mFRDay[3] }
+  }
+
+  // NomJourEN JJ MonthEN AAAA  (ex: Mon 25 Jan 2024)
+  const mENDay = d.match(/^(?:mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/i)
+  if (mENDay) {
+    const m = MONTHS_EN[mENDay[2].toLowerCase()]
+    if (m) { day = mENDay[1].padStart(2,'0'); month = m; year = mENDay[3] }
+  }
+
+  // ── Parsing de l'heure ──────────────────────────────────────────────────────
+
+  let hh = '00', mm = '00', ss = '00'
+
+  // ✅ ACTIF — HH:MM  (ex: 14:30)  → secondes à 00
+  const tHHMM = t.match(/^(\d{1,2}):(\d{2})$/)
+  if (tHHMM) { hh = tHHMM[1].padStart(2, '0'); mm = tHHMM[2] }
+
+  // // HH:MM:SS  (ex: 14:30:45)
+  // const tHHMMSS = t.match(/^(\d{1,2}):(\d{2}):(\d{2})$/)
+  // if (tHHMMSS) { hh = tHHMMSS[1].padStart(2, '0'); mm = tHHMMSS[2]; ss = tHHMMSS[3] }
+
+  // // HH:MM AM/PM  (ex: 02:30 PM)
+  // const tAMPM = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  // if (tAMPM) {
+  //   let h = parseInt(tAMPM[1], 10)
+  //   if (tAMPM[3].toUpperCase() === 'PM' && h < 12) h += 12
+  //   if (tAMPM[3].toUpperCase() === 'AM' && h === 12) h = 0
+  //   hh = String(h).padStart(2, '0'); mm = tAMPM[2]
+  // }
+
+  return `${year}-${month}-${day} ${hh}:${mm}:${ss}`
 }
 
 function parseItemsList(raw: string): string[] {
   if (!raw) return []
+  let items: string[]
   try {
-    return JSON.parse(raw)
+    items = JSON.parse(raw)
   } catch {
-    return raw
+    items = raw
       .replace(/^\[|\]$/g, '')
       .split(',')
       .map(s => s.replace(/^"|"$/g, '').trim())
       .filter(Boolean)
   }
+  return [...new Set(items)]
 }
 
 async function importTickets(
@@ -777,6 +969,12 @@ async function importTickets(
   const pending: Array<{ ref: string; row: TicketRow; payload: Record<string, unknown> }> = []
 
   for (const [ref, { first, last }] of lastByRef) {
+    const resolvedStatus = resolveTicketStatus(last.Status)
+    if (resolvedStatus === null) {
+      addLog('error', `[Ticket] Ref#${ref} — statut inconnu : "${last.Status}" (valeurs acceptées : New, In progress, Planned, Pending, Solved, Closed)`)
+      stats.errors++
+      continue
+    }
     pending.push({
       ref,
       row: first,
@@ -784,7 +982,7 @@ async function importTickets(
         name:            first.Titre,
         content:         first.Description,
         type:            TICKET_TYPE_MAP[first.Type]        ?? 1,
-        status:          resolveTicketStatus(last.Status),  // statut final réel
+        status:          resolvedStatus,
         priority:        TICKET_PRIORITY_MAP[first.Priority] ?? 3,
         urgency:         3,
         impact:          3,
@@ -920,9 +1118,9 @@ async function importCosts(
       continue
     }
 
-    const actiontime = parseInt(row.Duration_second, 10) || 0
-    const cost_time  = parseFloat(row.Time_Cost.replace(',', '.')) || 0
-    const cost_fixed = parseFloat(row.Fixed_Cost.replace(',', '.')) || 0
+    const actiontime = Math.round(parseNumber(row.Duration_second)) || 0
+    const cost_time  = parseNumber(row.Time_Cost)  || 0
+    const cost_fixed = parseNumber(row.Fixed_Cost) || 0
 
     logDebug(`[Coût] Préparation Ref#${ref}: durée=${actiontime}s, temps=${cost_time}, fixe=${cost_fixed}`)
     ticketCostsProcessed.get(ticketId)!.add(costKey)
@@ -1224,6 +1422,131 @@ async function importPhotos(
 }
 
 
+// ─── Parsing des nombres ──────────────────────────────────────────────────────
+
+/**
+ * Convertit une chaîne numérique en nombre, quel que soit le format :
+ *   1234.56      → point décimal, pas de séparateur milliers
+ *   1234,56      → virgule décimale, pas de séparateur milliers
+ *   1,234.56     → virgule milliers + point décimal  (format US/EN)
+ *   1.234,56     → point milliers  + virgule décimale (format EU/FR)
+ *   1 234.56     → espace milliers + point décimal
+ *   1 234,56     → espace milliers + virgule décimale
+ * Retourne NaN si la valeur n'est pas un nombre valide.
+ */
+function parseNumber(raw: string): number {
+  const s = raw.trim()
+  if (!s) return NaN
+
+  // Supprimer les espaces insécables / espaces simples utilisés comme séparateur milliers
+  const noSpace = s.replace(/[\s  ]/g, '')
+
+  const hasComma = noSpace.includes(',')
+  const hasDot   = noSpace.includes('.')
+
+  let normalized: string
+
+  if (hasComma && hasDot) {
+    // Les deux séparateurs présents → le dernier est le séparateur décimal
+    const lastComma = noSpace.lastIndexOf(',')
+    const lastDot   = noSpace.lastIndexOf('.')
+    if (lastComma > lastDot) {
+      // ex: 1.234,56 → format EU : point = milliers, virgule = décimal
+      normalized = noSpace.replace(/\./g, '').replace(',', '.')
+    } else {
+      // ex: 1,234.56 → format US : virgule = milliers, point = décimal
+      normalized = noSpace.replace(/,/g, '')
+    }
+  } else if (hasComma) {
+    // Uniquement virgule → séparateur décimal
+    normalized = noSpace.replace(',', '.')
+  } else {
+    // Uniquement point ou rien → déjà au bon format
+    normalized = noSpace
+  }
+
+  return parseFloat(normalized)
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+const REQUIRED_COLS = {
+  assets:  ['Name', 'Status', 'Location', 'Manufacturer', 'Item_Type', 'Model', 'Inventory_Number', 'User'],
+  tickets: ['Ref_Ticket', 'Date', 'Heure', 'Type', 'Titre', 'Description', 'Status', 'Priority', 'Items'],
+  costs:   ['Num_Ticket', 'Duration_second', 'Time_Cost', 'Fixed_Cost'],
+}
+
+/**
+ * Vérifie que toutes les colonnes requises sont présentes dans le CSV.
+ * Retourne le nombre d'erreurs trouvées.
+ */
+function validateColumns(
+  rows: Record<string, string>[],
+  required: string[],
+  sheetName: string,
+  logs: ImportLogEntry[],
+): number {
+  if (!rows.length) return 0
+  const headers = Object.keys(rows[0])
+  let errors = 0
+  for (const col of required) {
+    if (!headers.includes(col)) {
+      logs.push({
+        level: 'error',
+        message: `[Validation] ${sheetName} — colonne "${col}" manquante ou non conforme (colonnes trouvées : ${headers.join(', ')})`,
+        timestamp: new Date().toISOString(),
+      })
+      errors++
+    }
+  }
+  if (errors === 0)
+    logs.push({ level: 'success', message: `[Validation] ${sheetName} — colonnes OK`, timestamp: new Date().toISOString() })
+  return errors
+}
+
+/**
+ * Vérifie que les montants (Time_Cost, Fixed_Cost, Duration_second) sont positifs.
+ * Retourne le nombre d'erreurs trouvées.
+ */
+function validateAmounts(
+  rows: CostRow[],
+  sheetName: string,
+  logs: ImportLogEntry[],
+): number {
+  let errors = 0
+  const fields: { col: keyof CostRow; label: string }[] = [
+    { col: 'Time_Cost',       label: 'Time_Cost' },
+    { col: 'Fixed_Cost',      label: 'Fixed_Cost' },
+    { col: 'Duration_second', label: 'Duration_second' },
+  ]
+  rows.forEach((row, i) => {
+    const lineNum = i + 2 // ligne 1 = headers
+    for (const { col, label } of fields) {
+      const raw = (row[col] ?? '').trim()
+      if (raw === '') continue // champ vide toléré
+      const val = parseNumber(raw)
+      if (isNaN(val)) {
+        logs.push({
+          level: 'error',
+          message: `[Validation] ${sheetName} ligne ${lineNum} — "${label}" : valeur non numérique ("${row[col]}")`,
+          timestamp: new Date().toISOString(),
+        })
+        errors++
+      } else if (val < 0) {
+        logs.push({
+          level: 'error',
+          message: `[Validation] ${sheetName} ligne ${lineNum} — "${label}" doit être positif (valeur reçue : ${val})`,
+          timestamp: new Date().toISOString(),
+        })
+        errors++
+      }
+    }
+  })
+  if (errors === 0)
+    logs.push({ level: 'success', message: `[Validation] ${sheetName} — montants OK`, timestamp: new Date().toISOString() })
+  return errors
+}
+
 // ─── Point d'entrée principal ─────────────────────────────────────────────────
 
 export const importService = {
@@ -1247,101 +1570,153 @@ export const importService = {
     log('info', '─── Début de l\'import ───')
     progress(0, 'Lecture des fichiers CSV...')
 
-    // ── Lecture des fichiers (null = non fourni, '' = vide) ──────────────────
+    // ── Lecture des fichiers ─────────────────────────────────────────────────
     const [csv1, csv2, csv3] = await Promise.all([
       sheet1 ? readFileAsText(sheet1) : null,
       sheet2 ? readFileAsText(sheet2) : null,
       sheet3 ? readFileAsText(sheet3) : null,
     ])
 
-    // ── Parsing + validation ─────────────────────────────────────────────────
+    // Pour activer les lignes multi-entrées séparées par ';',
+    // remplacer parseCSV(csvX) par parseCSV(expandMultiEntryLines(csvX)) ci-dessous.
     const assetsRows  = csv1 != null ? parseCSV(csv1) as unknown as AssetRow[]  : null
     const ticketsRows = csv2 != null ? parseCSV(csv2) as unknown as TicketRow[] : null
     const costsRows   = csv3 != null ? parseCSV(csv3) as unknown as CostRow[]   : null
+    // const assetsRows  = csv1 != null ? parseCSV(expandMultiEntryLines(csv1)) as unknown as AssetRow[]  : null
+    // const ticketsRows = csv2 != null ? parseCSV(expandMultiEntryLines(csv2)) as unknown as TicketRow[] : null
+    // const costsRows   = csv3 != null ? parseCSV(expandMultiEntryLines(csv3)) as unknown as CostRow[]   : null
 
-    if (!sheet1) log('info',    'Feuille 1 (Actifs) non fournie — étape ignorée')
-    else if (!assetsRows?.length)  log('warning', 'Feuille 1 (Actifs) est vide — aucune donnée à importer')
+    if (!sheet1) log('info', 'Feuille 1 (Actifs) non fournie — étape ignorée')
+    else if (!assetsRows?.length) log('warning', 'Feuille 1 (Actifs) est vide')
     else log('info', `Feuille 1 : ${assetsRows.length} ligne(s) d'actifs`)
 
-    if (!sheet2) log('info',    'Feuille 2 (Tickets) non fournie — étape ignorée')
-    else if (!ticketsRows?.length) log('warning', 'Feuille 2 (Tickets) est vide — aucune donnée à importer')
+    if (!sheet2) log('info', 'Feuille 2 (Tickets) non fournie — étape ignorée')
+    else if (!ticketsRows?.length) log('warning', 'Feuille 2 (Tickets) est vide')
     else log('info', `Feuille 2 : ${ticketsRows.length} ligne(s) de tickets`)
 
-    if (!sheet3) log('info',    'Feuille 3 (Coûts) non fournie — étape ignorée')
-    else if (!costsRows?.length)   log('warning', 'Feuille 3 (Coûts) est vide — aucune donnée à importer')
+    if (!sheet3) log('info', 'Feuille 3 (Coûts) non fournie — étape ignorée')
+    else if (!costsRows?.length) log('warning', 'Feuille 3 (Coûts) est vide')
     else log('info', `Feuille 3 : ${costsRows.length} ligne(s) de coûts`)
 
     if (sheet3 && !sheet2)
-      log('warning', 'Feuille 3 fournie sans Feuille 2 — les coûts ne pourront pas être liés à des tickets')
+      log('warning', 'Feuille 3 fournie sans Feuille 2 — les coûts ne pourront pas être liés')
 
-    // ── Import des actifs ────────────────────────────────────────────────────
-    progress(10, 'Import des actifs...')
-    const assetsStats = assetsRows?.length
-      ? (log('info', '─── Import Actifs ───'), await importAssets(assetsRows, logs, nameToIdCache, userStats))
-      : { total: 0, created: 0, skipped: 0, errors: 0 }
+    // ── Validation (avant tout appel API) ────────────────────────────────────
+    // Si des erreurs sont détectées ici, rien n'a encore été inséré → pas besoin de rollback.
+    progress(5, 'Validation des colonnes et des montants...')
+    log('info', '─── Validation ───')
+    let validationErrors = 0
 
-    // ── Import des tickets ───────────────────────────────────────────────────
-    progress(50, 'Import des tickets...')
-    const ticketsStats = ticketsRows?.length
-      ? (log('info', '─── Import Tickets ───'), await importTickets(ticketsRows, logs, nameToIdCache, refToGlpiId))
-      : { total: 0, created: 0, skipped: 0, errors: 0 }
-
-    // ── Import des coûts ─────────────────────────────────────────────────────
-    progress(75, 'Import des coûts...')
-    const costsStats = costsRows?.length
-      ? (log('info', '─── Import Coûts ───'), await importCosts(costsRows, logs, refToGlpiId))
-      : { total: 0, created: 0, errors: 0 }
-
-    let photosStats = { total: 0, uploaded: 0, errors: 0 }
-    if (photosZip) {
-      progress(85, 'Upload des photos...')
-      log('info', '─── Import Photos ───')
-      photosStats = await importPhotos(photosZip, logs, nameToIdCache)
+    if (assetsRows?.length)
+      validationErrors += validateColumns(assetsRows as unknown as Record<string, string>[], REQUIRED_COLS.assets,  'Feuille 1 (Actifs)',  logs)
+    if (ticketsRows?.length)
+      validationErrors += validateColumns(ticketsRows as unknown as Record<string, string>[], REQUIRED_COLS.tickets, 'Feuille 2 (Tickets)', logs)
+    if (costsRows?.length) {
+      validationErrors += validateColumns(costsRows as unknown as Record<string, string>[], REQUIRED_COLS.costs,   'Feuille 3 (Coûts)',   logs)
+      validationErrors += validateAmounts(costsRows, 'Feuille 3 (Coûts)', logs)
     }
 
-    const hasErrors = assetsStats.errors > 0 || ticketsStats.errors > 0 ||
-                      costsStats.errors > 0 || photosStats.errors > 0 || userStats.errors > 0
-
-    if (hasErrors) {
-      log('error', '─── Erreurs détectées — Annulation de l\'import ───')
-      progress(88, 'Rollback en cours — réinitialisation des données...')
-
-      try {
-        await resetService.resetDatabase()
-        log('success', '─── Réinitialisation terminée — Aucune donnée conservée ───')
-      } catch (resetErr: any) {
-        log('error', `Erreur lors de la réinitialisation : ${resetErr.message}`, resetErr.response?.data)
-      }
-
-      progress(100, 'Import annulé — données réinitialisées')
+    if (validationErrors > 0) {
+      log('error', `─── ${validationErrors} erreur(s) de validation — import annulé, aucune donnée insérée ───`)
+      progress(100, 'Import annulé — erreurs de validation')
       return {
         success: false,
-        rolledBack: true,
+        rolledBack: false,
         logs,
         stats: {
-          assets:  assetsStats,
-          tickets: ticketsStats,
-          costs:   costsStats,
-          photos:  photosStats,
+          assets:  { total: 0, created: 0, skipped: 0, errors: 0 },
+          tickets: { total: 0, created: 0, skipped: 0, errors: 0 },
+          costs:   { total: 0, created: 0, errors: 0 },
+          photos:  { total: 0, uploaded: 0, errors: 0 },
           users:   userStats,
         },
       }
     }
 
+    log('info', '─── Validation réussie — démarrage de l\'import ───')
+
+    // ── Helper rollback ──────────────────────────────────────────────────────
+    // Appelé dès qu'une phase détecte une erreur : purge tout ce qui a déjà
+    // été inséré et retourne immédiatement sans continuer les phases suivantes.
+    const rollbackAndReturn = async (
+      assetsStats:  ImportResult['stats']['assets'],
+      ticketsStats: ImportResult['stats']['tickets'],
+      costsStats:   ImportResult['stats']['costs'],
+      photosStats:  ImportResult['stats']['photos'],
+    ): Promise<ImportResult> => {
+      log('error', '─── Erreur détectée — arrêt immédiat et réinitialisation ───')
+      progress(90, 'Rollback en cours — suppression des données insérées...')
+      try {
+        await resetService.resetDatabase()
+        log('success', '─── Réinitialisation terminée — aucune donnée conservée ───')
+      } catch (resetErr: any) {
+        log('error', `Erreur lors de la réinitialisation : ${resetErr.message}`, resetErr.response?.data)
+      }
+      progress(100, 'Import annulé — données réinitialisées')
+      return {
+        success: false,
+        rolledBack: true,
+        logs,
+        stats: { assets: assetsStats, tickets: ticketsStats, costs: costsStats, photos: photosStats, users: userStats },
+      }
+    }
+
+    const emptyAssets  = { total: 0, created: 0, skipped: 0, errors: 0 }
+    const emptyTickets = { total: 0, created: 0, skipped: 0, errors: 0 }
+    const emptyCosts   = { total: 0, created: 0, errors: 0 }
+    const emptyPhotos  = { total: 0, uploaded: 0, errors: 0 }
+
+    // ── Phase 1 : Actifs ─────────────────────────────────────────────────────
+    progress(10, 'Import des actifs...')
+    const assetsStats = assetsRows?.length
+      ? (log('info', '─── Import Actifs ───'), await importAssets(assetsRows, logs, nameToIdCache, userStats))
+      : emptyAssets
+
+    if (assetsStats.errors > 0 || userStats.errors > 0) {
+      return rollbackAndReturn(assetsStats, emptyTickets, emptyCosts, emptyPhotos)
+    }
+
+    // ── Phase 2 : Tickets ────────────────────────────────────────────────────
+    progress(50, 'Import des tickets...')
+    const ticketsStats = ticketsRows?.length
+      ? (log('info', '─── Import Tickets ───'), await importTickets(ticketsRows, logs, nameToIdCache, refToGlpiId))
+      : emptyTickets
+
+    if (ticketsStats.errors > 0) {
+      return rollbackAndReturn(assetsStats, ticketsStats, emptyCosts, emptyPhotos)
+    }
+
+    // ── Phase 3 : Coûts ──────────────────────────────────────────────────────
+    progress(75, 'Import des coûts...')
+    const costsStats = costsRows?.length
+      ? (log('info', '─── Import Coûts ───'), await importCosts(costsRows, logs, refToGlpiId))
+      : emptyCosts
+
+    if (costsStats.errors > 0) {
+      return rollbackAndReturn(assetsStats, ticketsStats, costsStats, emptyPhotos)
+    }
+
+    // ── Phase 4 : Photos ─────────────────────────────────────────────────────
+    let photosStats = emptyPhotos
+    if (photosZip) {
+      progress(85, 'Upload des photos...')
+      log('info', '─── Import Photos ───')
+      photosStats = await importPhotos(photosZip, logs, nameToIdCache)
+
+      if (photosStats.errors > 0) {
+        return rollbackAndReturn(assetsStats, ticketsStats, costsStats, photosStats)
+      }
+    }
+
+    // ── Succès total ─────────────────────────────────────────────────────────
     progress(100, 'Import terminé')
-    log('info', `─── Import terminé — ${userStats.created} utilisateur(s) créé(s) ───`)
+    log('info', `─── Import terminé avec succès — ${userStats.created} utilisateur(s) créé(s) ───`)
 
     return {
       success: true,
       rolledBack: false,
       logs,
-      stats: {
-        assets:  assetsStats,
-        tickets: ticketsStats,
-        costs:   costsStats,
-        photos:  photosStats,
-        users:   userStats,
-      },
+      stats: { assets: assetsStats, tickets: ticketsStats, costs: costsStats, photos: photosStats, users: userStats },
     }
   },
 
