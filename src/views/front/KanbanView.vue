@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
 import { getKanbanSettings, type KanbanSetting } from '@/services/api/kanbanSettingsService'
+import { saveTicketCost } from '@/services/api/ticketCostService'
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router  = useRouter()
@@ -155,16 +156,27 @@ async function applyStatusChange(ticket: Ticket, newStatus: number, note?: strin
 }
 
 // ── Dialog de confirmation (Terminé) ────────────────────────────
-const showDialog    = ref(false)
-const dialogTicket  = ref<Ticket | null>(null)
-const dialogStatus  = ref(5)
-const resolutionNote = ref('')
+const showDialog         = ref(false)
+const dialogTicket       = ref<Ticket | null>(null)
+const dialogStatus       = ref(5)
+const resolutionNote     = ref('')
+const dialogCost         = ref<number | ''>('')
+const dialogItems        = ref<any[]>([])
+const loadingDialogItems = ref(false)
 
-function openStatusDialog(ticket: Ticket, status: number) {
-  dialogTicket.value  = ticket
-  dialogStatus.value  = status
+async function openStatusDialog(ticket: Ticket, status: number) {
+  dialogTicket.value   = ticket
+  dialogStatus.value   = status
   resolutionNote.value = ''
-  showDialog.value    = true
+  dialogCost.value     = ''
+  dialogItems.value    = []
+  showDialog.value     = true
+  // Charger les actifs liés pour connaître le nombre et les types
+  loadingDialogItems.value = true
+  try {
+    dialogItems.value = (await fetchTicketItems(ticket.id)) || []
+  } catch { dialogItems.value = [] }
+  finally { loadingDialogItems.value = false }
 }
 
 function cancelDialog() {
@@ -174,7 +186,27 @@ function cancelDialog() {
 
 async function confirmDialog() {
   if (!dialogTicket.value) return
-  await applyStatusChange(dialogTicket.value, dialogStatus.value, resolutionNote.value)
+  const ticket = dialogTicket.value
+
+  await applyStatusChange(ticket, dialogStatus.value, resolutionNote.value)
+
+  // Enregistrer le coût dans SQLite si renseigné
+  const cost = Number(dialogCost.value)
+  if (cost > 0) {
+    const types = dialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
+    try {
+      await saveTicketCost({
+        ticketId:    ticket.id,
+        ticketTitle: ticket.title,
+        fixedCost:   cost,
+        itemCount:   types.length || 1,
+        itemTypes:   JSON.stringify(types),
+      })
+    } catch (e) {
+      console.warn('[Cost] Erreur enregistrement coût :', e)
+    }
+  }
+
   showDialog.value   = false
   dialogTicket.value = null
 }
@@ -471,6 +503,31 @@ onMounted(() => { load(); loadSettings() })
                 rows="3"
                 placeholder="Décrivez la solution apportée…"
               ></textarea>
+            </div>
+
+            <div class="dialog-field">
+              <label>
+                Coût fixe (Ar)
+                <span class="field-hint">optionnel</span>
+              </label>
+              <div class="cost-input-wrap">
+                <span class="cost-prefix">Ar</span>
+                <input
+                  v-model="dialogCost"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  class="cost-input"
+                />
+              </div>
+              <p v-if="loadingDialogItems" class="cost-info">Chargement des actifs…</p>
+              <p v-else-if="dialogItems.length > 1" class="cost-info">
+                {{ dialogItems.length }} actifs liés — coût divisé en {{ dialogItems.length }}
+                <template v-if="dialogCost && Number(dialogCost) > 0">
+                  ({{ (Number(dialogCost) / dialogItems.length).toFixed(2) }} Ar/actif)
+                </template>
+              </p>
             </div>
 
             <div class="dialog-actions">
