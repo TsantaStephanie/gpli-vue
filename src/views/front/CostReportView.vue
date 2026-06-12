@@ -137,34 +137,12 @@ onMounted(load)
 
     <template v-else>
 
-      <!-- ── Métriques résumé ───────────────────────────────────── -->
-      <div class="metrics-row">
-        <div class="metric-card mc-all">
-          <p class="metric-label">Total général</p>
-          <p class="metric-val">{{ fmt(totalAll) }} <span class="metric-unit">Ar</span></p>
-          <p class="metric-hint">{{ records.length }} entrée(s)</p>
-        </div>
-        <div class="metric-card mc-glpi">
-          <div class="metric-source-badge badge-glpi">GLPI</div>
-          <p class="metric-label">Coûts importés</p>
-          <p class="metric-val">{{ fmt(totalGlpi) }} <span class="metric-unit">Ar</span></p>
-          <p class="metric-hint">{{ glpiRecords.length }} entrée(s) — Fixed Cost CSV</p>
-        </div>
-        <div class="metric-card mc-kanban">
-          <div class="metric-source-badge badge-kanban">Kanban</div>
-          <p class="metric-label">Coûts Kanban</p>
-          <p class="metric-val">{{ fmt(totalKanban) }} <span class="metric-unit">Ar</span></p>
-          <p class="metric-hint">{{ kanbanRecords.length }} entrée(s) — saisie manuelle</p>
-        </div>
-      </div>
 
       <!-- ── Onglets filtre source ──────────────────────────────── -->
       <div class="tabs">
         <button
           v-for="tab in [
-            { key: 'all',    label: 'Tous les coûts' },
-            { key: 'glpi',   label: 'GLPI / Import'  },
-            { key: 'kanban', label: 'Kanban'          },
+            { key: 'all',    label: 'Tous les coûts' }
           ]"
           :key="tab.key"
           class="tab-btn"

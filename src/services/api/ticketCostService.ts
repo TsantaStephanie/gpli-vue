@@ -63,7 +63,16 @@ export async function fetchGlpiTicketCosts(): Promise<TicketCostRecord[]> {
   if (!Array.isArray(costs) || costs.length === 0) return []
 
   // Garder seulement les lignes avec un Fixed_Cost > 0
-  const relevant = costs.filter((c: any) => Number(c.cost_fixed) > 0)
+  // Calcul du coût total : (durée_sec / 3600) × taux_horaire + coût_fixe + coût_matériel
+  const calcTotal = (c: any): number => {
+    const timeHours    = Number(c.actiontime  ?? 0) / 3600
+    const costHoraire  = timeHours * Number(c.cost_time     ?? 0)
+    const costFixe     = Number(c.cost_fixed    ?? 0)
+    const costMateriel = Number(c.cost_material ?? 0)
+    return costHoraire + costFixe + costMateriel
+  }
+
+  const relevant = costs.filter((c: any) => calcTotal(c) > 0)
   if (!relevant.length) return []
 
   // 2. Résolution titre + items par ticket (en parallèle, dédupliqué)
@@ -96,7 +105,7 @@ export async function fetchGlpiTicketCosts(): Promise<TicketCostRecord[]> {
       id:          -(idx + 1),           // ID négatif pour éviter collision avec SQLite
       ticketId:    c.tickets_id as number,
       ticketTitle: info.title,
-      fixedCost:   Number(c.cost_fixed),
+      fixedCost:   Math.round(calcTotal(c) * 100) / 100,
       itemCount,
       itemTypes:   JSON.stringify(info.itemTypes),
       source:      'glpi' as CostSource,
