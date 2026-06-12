@@ -1,4 +1,26 @@
 ══════════════════════════════════════════════════════════════
+FONCTIONNALITÉ : Tableau coûts par item (Item / Super coût / Réouverture / GLPI / Total)
+══════════════════════════════════════════════════════════════
+
+FICHIER : src/services/api/ticketCostService.ts
+LIGNE 4 — modifier :
+  export type CostSource = 'glpi' | 'kanban' | 'reopen'
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/views/front/KanbanView.vue
+Dans confirmCancelDialog — modifier source du coût réouverture :
+  source: 'reopen'   // (était 'kanban')
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/views/front/CostReportView.vue
+RÉÉCRITURE COMPLÈTE — tableau avec colonnes :
+  Item | Super coût (kanban) | Coût réouverture (reopen) | Coût GLPI (glpi) | Coût total
+  Ligne tfoot = totaux par colonne
+  CSS simple scoped (pas de framework)
+
+══════════════════════════════════════════════════════════════
 FONCTIONNALITÉ : Coût de réouverture en % (ajout au dialog Rouvrir)
 ══════════════════════════════════════════════════════════════
 

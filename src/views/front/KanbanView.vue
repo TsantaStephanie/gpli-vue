@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
 import { getKanbanSettings, type KanbanSetting } from '@/services/api/kanbanSettingsService'
-import { saveTicketCost, deleteLatestTicketCost, getLatestTicketCost } from '@/services/api/ticketCostService'
+import { saveTicketCost, getLatestTicketCost, deleteLatestTicketCost } from '@/services/api/ticketCostService'
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router  = useRouter()
@@ -223,28 +223,37 @@ async function openCancelDialog(ticket: Ticket) {
   }
 }
 
+// Ferme le dialog sans rien faire
 function dismissCancelDialog() {
   showCancelDialog.value   = false
   cancelDialogTicket.value = null
 }
 
+// Bouton "Annuler" : remet En cours + SUPPRIME le dernier super coût (pas de surcharge %)
+async function annulerFermeture() {
+  if (!cancelDialogTicket.value) return
+  const ticket = cancelDialogTicket.value
+  showCancelDialog.value   = false
+  cancelDialogTicket.value = null
+
+  await applyStatusChange(ticket, 2)
+
+  try {
+    await deleteLatestTicketCost(ticket.id)
+  } catch (e) {
+    console.warn('[Cost] Erreur suppression coût :', e)
+  }
+}
+
+// Bouton "Confirmer la réouverture" : remet En cours + AJOUTE le coût % (pas de suppression)
 async function confirmCancelDialog() {
   if (!cancelDialogTicket.value) return
   const ticket = cancelDialogTicket.value
   showCancelDialog.value   = false
   cancelDialogTicket.value = null
 
-  // 1. Remettre en "En cours" dans GLPI
   await applyStatusChange(ticket, 2)
 
-  // 2. Supprimer le dernier coût SQLite pour ce ticket
-  try {
-    await deleteLatestTicketCost(ticket.id)
-  } catch (e) {
-    console.warn('[Cost] Erreur suppression coût :', e)
-  }
-
-  // 3. Enregistrer le coût de réouverture (% du dernier coût)
   if (reopenCost.value > 0) {
     const types = cancelDialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
     try {
@@ -254,7 +263,7 @@ async function confirmCancelDialog() {
         fixedCost:   reopenCost.value,
         itemCount:   types.length || 1,
         itemTypes:   JSON.stringify(types),
-        source:      'kanban',
+        source:      'reopen',
       })
     } catch (e) {
       console.warn('[Cost] Erreur enregistrement coût réouverture :', e)
@@ -455,12 +464,6 @@ onMounted(() => { load(); loadSettings() })
                 <div class="card-footer">
                   <span class="card-id">#{{ ticket.id }}</span>
                   <span class="card-date">{{ relativeDate(ticket.createdAt) }}</span>
-                  <button
-                    v-if="col.id === 'done'"
-                    class="btn-reopen"
-                    @click.stop="openCancelDialog(ticket)"
-                    title="Remettre en cours"
-                  >↩ Rouvrir</button>
                 </div>
               </div>
             </div>
@@ -580,7 +583,7 @@ onMounted(() => { load(); loadSettings() })
             <p class="dialog-sub">
               Le ticket <strong>#{{ cancelDialogTicket?.id }}</strong> sera remis
               <strong>En cours</strong>.<br>
-              Le dernier coût saisi pour ce ticket sera supprimé.
+              Choisissez comment gérer le super coût.
             </p>
 
             <div class="dialog-field">
@@ -609,12 +612,15 @@ onMounted(() => { load(); loadSettings() })
             </div>
 
             <div class="dialog-actions">
-              <button class="btn-ghost" @click="dismissCancelDialog">Annuler</button>
-              <button class="btn-confirm" style="background:#ef4444" @click="confirmCancelDialog">
+              <button class="btn-ghost" @click="dismissCancelDialog">Fermer</button>
+              <button class="btn-confirm" style="background:#ef4444" @click="annulerFermeture">
+                Annuler — supprimer le coût
+              </button>
+              <button class="btn-confirm" style="background:#6366f1" @click="confirmCancelDialog">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
                 </svg>
-                Confirmer la réouverture
+                Réouverture +{{ reopenPct || 0 }}%
               </button>
             </div>
 

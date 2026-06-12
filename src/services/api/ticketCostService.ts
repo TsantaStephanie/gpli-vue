@@ -1,7 +1,7 @@
 import axios from 'axios'
 import glpiClient from './glpiClient'
 
-export type CostSource = 'glpi' | 'kanban'
+export type CostSource = 'glpi' | 'kanban' | 'reopen'
 
 export interface TicketCostPayload {
   ticketId:    number
@@ -144,9 +144,10 @@ export function computeCostReport(
   for (const r of filtered) {
     let types: string[] = []
     try { types = JSON.parse(r.itemTypes || '[]') } catch { types = [] }
-    if (!types.length || !r.itemCount) continue
+    // Fallback : coût visible même sans actifs liés
+    if (!types.length) types = ['Non catégorisé']
 
-    const costPerItem = r.fixedCost / r.itemCount
+    const costPerItem = r.fixedCost / (types.length || 1)
 
     for (const t of types) {
       if (!map.has(t)) map.set(t, { totalCost: 0, ticketIds: new Set(), entries: [] })
