@@ -46,6 +46,19 @@ export async function getAllTicketCosts(): Promise<TicketCostRecord[]> {
   return res.data
 }
 
+export async function getLatestTicketCost(ticketId: number): Promise<TicketCostRecord | null> {
+  try {
+    const res = await axios.get<TicketCostRecord>(`${BASE}/ticket/${ticketId}/latest`)
+    return res.data
+  } catch {
+    return null
+  }
+}
+
+export async function deleteLatestTicketCost(ticketId: number): Promise<void> {
+  await axios.delete(`${BASE}/ticket/${ticketId}/latest`)
+}
+
 /**
  * Calcule le rapport de coûts PAR TYPE d'item.
  * Filtre optionnel par source ('glpi' | 'kanban' | undefined = tous).

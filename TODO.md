@@ -13,3 +13,13 @@ BO:
   -  créer la page pour importer les 4 fichiers(4 input files)  
       - 3 fichiers csv pour le contenu    
       - 1 fichier zip pour les images
+
+
+les tickets terminés peut etre encore en progress et il doit y avoir une boite dialogue et un bouton annulation , donc quand on clique sur ceci , le super cout saisie dernièrement dans le terminé est supprimé 
+
+bouton
+réouverture , 
+champs en pourcentage par exemple 10% ceci est un cout de réouverture (cout en +), 
+ce cout est stocké dans SQlite 
+
+categorie , super_cost , cout réouverture , cout total 

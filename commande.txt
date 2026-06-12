@@ -1,4 +1,0 @@
-Get-Children C:\aaa -Recurse -File | 
-Where-Object {$_.LastWriteTime -gt (Get-Date).AddMinutes(-30)} |
-Sort-Object LastWriterTime -Descending | 
-Select-Object LastWriterTime , FullName 

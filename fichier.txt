@@ -1,0 +1,249 @@
+══════════════════════════════════════════════════════════════
+FONCTIONNALITÉ : Coût de réouverture en % (ajout au dialog Rouvrir)
+══════════════════════════════════════════════════════════════
+
+── BACKEND ────────────────────────────────────────────────────
+
+FICHIER : src/main/java/com/gpli/backend/service/TicketCostService.java
+LIGNE 9 (après import List) — ajouter :
+  import java.util.Optional;
+
+APRÈS getByTicketId() — ajouter :
+  public Optional<TicketCost> getLatestByTicketId(Integer ticketId) {
+      return repository.findTopByTicketIdOrderByCreatedAtDesc(ticketId);
+  }
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/main/java/com/gpli/backend/controller/TicketCostController.java
+AVANT @DeleteMapping("/ticket/{ticketId}/latest") — ajouter :
+  @GetMapping("/ticket/{ticketId}/latest")
+  public ResponseEntity<TicketCost> getLatest(@PathVariable Integer ticketId) {
+      return service.getLatestByTicketId(ticketId)
+              .map(ResponseEntity::ok)
+              .orElse(ResponseEntity.notFound().build());
+  }
+
+── FRONTEND ───────────────────────────────────────────────────
+
+FICHIER : src/services/api/ticketCostService.ts
+AVANT deleteLatestTicketCost() — ajouter :
+  export async function getLatestTicketCost(ticketId: number): Promise<TicketCostRecord | null> {
+    try {
+      const res = await axios.get<TicketCostRecord>(`${BASE}/ticket/${ticketId}/latest`)
+      return res.data
+    } catch {
+      return null
+    }
+  }
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/views/front/KanbanView.vue
+
+LIGNE 2 — modifier :
+  import { ref, computed, onMounted } from 'vue'
+
+LIGNE 7 — modifier :
+  import { saveTicketCost, deleteLatestTicketCost, getLatestTicketCost } from '@/services/api/ticketCostService'
+
+SECTION "Dialog annulation" — remplacer par :
+  const showCancelDialog    = ref(false)
+  const cancelDialogTicket  = ref<Ticket | null>(null)
+  const cancelCostBase      = ref(0)
+  const cancelCostLoading   = ref(false)
+  const cancelDialogItems   = ref<any[]>([])
+  const reopenPct           = ref<number | ''>(10)
+
+  const reopenCost = computed(() => {
+    const pct = Number(reopenPct.value)
+    if (!pct || !cancelCostBase.value) return 0
+    return Math.round(cancelCostBase.value * pct / 100 * 100) / 100
+  })
+
+  async function openCancelDialog(ticket: Ticket) {
+    cancelDialogTicket.value = ticket
+    reopenPct.value          = 10
+    cancelCostBase.value     = 0
+    cancelDialogItems.value  = []
+    showCancelDialog.value   = true
+    cancelCostLoading.value  = true
+    try {
+      const [latestRes, itemsRes] = await Promise.allSettled([
+        getLatestTicketCost(ticket.id),
+        fetchTicketItems(ticket.id),
+      ])
+      if (latestRes.status === 'fulfilled' && latestRes.value) {
+        cancelCostBase.value = latestRes.value.fixedCost
+      }
+      if (itemsRes.status === 'fulfilled' && Array.isArray(itemsRes.value)) {
+        cancelDialogItems.value = itemsRes.value
+      }
+    } finally {
+      cancelCostLoading.value = false
+    }
+  }
+
+  function dismissCancelDialog() {
+    showCancelDialog.value   = false
+    cancelDialogTicket.value = null
+  }
+
+  async function confirmCancelDialog() {
+    if (!cancelDialogTicket.value) return
+    const ticket = cancelDialogTicket.value
+    showCancelDialog.value   = false
+    cancelDialogTicket.value = null
+    // 1. Remettre en "En cours" dans GLPI
+    await applyStatusChange(ticket, 2)
+    // 2. Supprimer le dernier coût SQLite
+    try { await deleteLatestTicketCost(ticket.id) }
+    catch (e) { console.warn('[Cost] Erreur suppression coût :', e) }
+    // 3. Enregistrer coût de réouverture (% du dernier coût)
+    if (reopenCost.value > 0) {
+      const types = cancelDialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
+      try {
+        await saveTicketCost({
+          ticketId:    ticket.id,
+          ticketTitle: ticket.title,
+          fixedCost:   reopenCost.value,
+          itemCount:   types.length || 1,
+          itemTypes:   JSON.stringify(types),
+          source:      'kanban',
+        })
+      } catch (e) { console.warn('[Cost] Erreur enregistrement coût réouverture :', e) }
+    }
+  }
+
+TEMPLATE dialog réouverture — après <p class="dialog-sub"> — ajouter :
+  <div class="dialog-field">
+    <label>
+      Coût de réouverture (%)
+      <span class="field-hint">optionnel</span>
+    </label>
+    <div class="cost-input-wrap">
+      <span class="cost-prefix">%</span>
+      <input
+        v-model.number="reopenPct"
+        type="number"
+        min="0"
+        max="100"
+        step="1"
+        placeholder="10"
+      />
+    </div>
+    <span v-if="cancelCostLoading" class="field-hint">Chargement du dernier coût…</span>
+    <span v-else-if="reopenCost > 0" class="field-hint">
+      = Ar {{ reopenCost.toFixed(2) }} (base : Ar {{ cancelCostBase.toFixed(2) }})
+    </span>
+    <span v-else-if="cancelCostBase === 0 && !cancelCostLoading" class="field-hint">
+      Aucun coût précédent — surcharge non applicable.
+    </span>
+  </div>
+
+══════════════════════════════════════════════════════════════
+FONCTIONNALITÉ : Réouverture ticket Terminé → En cours + suppression dernier coût
+══════════════════════════════════════════════════════════════
+
+── BACKEND ────────────────────────────────────────────────────
+
+FICHIER : src/main/java/com/gpli/backend/repository/TicketCostRepository.java
+LIGNE 9 — ajouter import :
+  import java.util.Optional;
+
+LIGNE 12 — ajouter méthode :
+  Optional<TicketCost> findTopByTicketIdOrderByCreatedAtDesc(Integer ticketId);
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/main/java/com/gpli/backend/service/TicketCostService.java
+APRÈS getByTicketId() — ajouter :
+  public boolean deleteLatestByTicketId(Integer ticketId) {
+      return repository.findTopByTicketIdOrderByCreatedAtDesc(ticketId)
+          .map(cost -> { repository.delete(cost); return true; })
+          .orElse(false);
+  }
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/main/java/com/gpli/backend/controller/TicketCostController.java
+APRÈS getByTicket() — ajouter :
+  @DeleteMapping("/ticket/{ticketId}/latest")
+  public ResponseEntity<Void> deleteLatest(@PathVariable Integer ticketId) {
+      service.deleteLatestByTicketId(ticketId);
+      return ResponseEntity.noContent().build();
+  }
+
+── FRONTEND ───────────────────────────────────────────────────
+
+FICHIER : src/services/api/ticketCostService.ts
+APRÈS getAllTicketCosts() — ajouter :
+  export async function deleteLatestTicketCost(ticketId: number): Promise<void> {
+    await axios.delete(`${BASE}/ticket/${ticketId}/latest`)
+  }
+
+──────────────────────────────────────────────────────────────
+
+FICHIER : src/views/front/KanbanView.vue
+
+LIGNE 7 — modifier import :
+  import { saveTicketCost, deleteLatestTicketCost } from '@/services/api/ticketCostService'
+
+DANS onDrop() — ajouter condition avant le else :
+  } else if (draggingFromCol.value === 'done' && col.id === 'progress') {
+    openCancelDialog(ticket)
+  }
+
+APRÈS cancelDialog() — ajouter :
+  const showCancelDialog   = ref(false)
+  const cancelDialogTicket = ref<Ticket | null>(null)
+
+  function openCancelDialog(ticket: Ticket) {
+    cancelDialogTicket.value = ticket
+    showCancelDialog.value   = true
+  }
+
+  function dismissCancelDialog() {
+    showCancelDialog.value   = false
+    cancelDialogTicket.value = null
+  }
+
+  async function confirmCancelDialog() {
+    if (!cancelDialogTicket.value) return
+    const ticket = cancelDialogTicket.value
+    showCancelDialog.value   = false
+    cancelDialogTicket.value = null
+    await applyStatusChange(ticket, 2)
+    try {
+      await deleteLatestTicketCost(ticket.id)
+    } catch (e) {
+      console.warn('[Cost] Erreur suppression coût :', e)
+    }
+  }
+
+DANS card-footer (colonne done) — ajouter bouton :
+  <button
+    v-if="col.id === 'done'"
+    class="btn-reopen"
+    @click.stop="openCancelDialog(ticket)"
+    title="Remettre en cours"
+  >↩ Rouvrir</button>
+
+DANS template — ajouter dialog (avant le dialog "Terminé") :
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showCancelDialog" class="modal-overlay" @click.self="dismissCancelDialog">
+        <div class="dialog-card">
+          <h3 class="dialog-title">Rouvrir ce ticket ?</h3>
+          <p class="dialog-sub">
+            Le ticket #{{ cancelDialogTicket?.id }} sera remis En cours.
+            Le dernier coût saisi sera supprimé.
+          </p>
+          <div class="dialog-actions">
+            <button class="btn-ghost" @click="dismissCancelDialog">Annuler</button>
+            <button class="btn-confirm" @click="confirmCancelDialog">Confirmer la réouverture</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>

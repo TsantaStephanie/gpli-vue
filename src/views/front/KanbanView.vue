@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
 import { getKanbanSettings, type KanbanSetting } from '@/services/api/kanbanSettingsService'
-import { saveTicketCost } from '@/services/api/ticketCostService'
+import { saveTicketCost, deleteLatestTicketCost, getLatestTicketCost } from '@/services/api/ticketCostService'
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router  = useRouter()
@@ -124,6 +124,8 @@ function onDrop(e: DragEvent, col: typeof COLUMNS[number]) {
 
   if (col.needsDialog) {
     openStatusDialog(ticket, col.targetStatus)
+  } else if (draggingFromCol.value === 'done' && col.id === 'progress') {
+    openCancelDialog(ticket)
   } else {
     applyStatusChange(ticket, col.targetStatus)
   }
@@ -182,6 +184,82 @@ async function openStatusDialog(ticket: Ticket, status: number) {
 function cancelDialog() {
   showDialog.value   = false
   dialogTicket.value = null
+}
+
+// ── Dialog annulation "Terminé → En cours" ──────────────────────
+const showCancelDialog    = ref(false)
+const cancelDialogTicket  = ref<Ticket | null>(null)
+const cancelCostBase      = ref(0)
+const cancelCostLoading   = ref(false)
+const cancelDialogItems   = ref<any[]>([])
+const reopenPct           = ref<number | ''>(10)
+
+const reopenCost = computed(() => {
+  const pct = Number(reopenPct.value)
+  if (!pct || !cancelCostBase.value) return 0
+  return Math.round(cancelCostBase.value * pct / 100 * 100) / 100
+})
+
+async function openCancelDialog(ticket: Ticket) {
+  cancelDialogTicket.value = ticket
+  reopenPct.value          = 10
+  cancelCostBase.value     = 0
+  cancelDialogItems.value  = []
+  showCancelDialog.value   = true
+  cancelCostLoading.value  = true
+  try {
+    const [latestRes, itemsRes] = await Promise.allSettled([
+      getLatestTicketCost(ticket.id),
+      fetchTicketItems(ticket.id),
+    ])
+    if (latestRes.status === 'fulfilled' && latestRes.value) {
+      cancelCostBase.value = latestRes.value.fixedCost
+    }
+    if (itemsRes.status === 'fulfilled' && Array.isArray(itemsRes.value)) {
+      cancelDialogItems.value = itemsRes.value
+    }
+  } finally {
+    cancelCostLoading.value = false
+  }
+}
+
+function dismissCancelDialog() {
+  showCancelDialog.value   = false
+  cancelDialogTicket.value = null
+}
+
+async function confirmCancelDialog() {
+  if (!cancelDialogTicket.value) return
+  const ticket = cancelDialogTicket.value
+  showCancelDialog.value   = false
+  cancelDialogTicket.value = null
+
+  // 1. Remettre en "En cours" dans GLPI
+  await applyStatusChange(ticket, 2)
+
+  // 2. Supprimer le dernier coût SQLite pour ce ticket
+  try {
+    await deleteLatestTicketCost(ticket.id)
+  } catch (e) {
+    console.warn('[Cost] Erreur suppression coût :', e)
+  }
+
+  // 3. Enregistrer le coût de réouverture (% du dernier coût)
+  if (reopenCost.value > 0) {
+    const types = cancelDialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
+    try {
+      await saveTicketCost({
+        ticketId:    ticket.id,
+        ticketTitle: ticket.title,
+        fixedCost:   reopenCost.value,
+        itemCount:   types.length || 1,
+        itemTypes:   JSON.stringify(types),
+        source:      'kanban',
+      })
+    } catch (e) {
+      console.warn('[Cost] Erreur enregistrement coût réouverture :', e)
+    }
+  }
 }
 
 async function confirmDialog() {
@@ -377,6 +455,12 @@ onMounted(() => { load(); loadSettings() })
                 <div class="card-footer">
                   <span class="card-id">#{{ ticket.id }}</span>
                   <span class="card-date">{{ relativeDate(ticket.createdAt) }}</span>
+                  <button
+                    v-if="col.id === 'done'"
+                    class="btn-reopen"
+                    @click.stop="openCancelDialog(ticket)"
+                    title="Remettre en cours"
+                  >↩ Rouvrir</button>
                 </div>
               </div>
             </div>
@@ -475,6 +559,69 @@ onMounted(() => { load(); loadSettings() })
       </Transition>
     </Teleport>
 
+
+    <!-- ═══════════════════════════════════════════════════════════
+         DIALOG ANNULATION "TERMINÉ → EN COURS"
+         ═══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCancelDialog" class="modal-overlay" @click.self="dismissCancelDialog">
+          <div class="dialog-card">
+
+            <div class="dialog-icon" style="background:#fef2f2;color:#ef4444">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            </div>
+
+            <h3 class="dialog-title">Rouvrir ce ticket ?</h3>
+            <p class="dialog-sub">
+              Le ticket <strong>#{{ cancelDialogTicket?.id }}</strong> sera remis
+              <strong>En cours</strong>.<br>
+              Le dernier coût saisi pour ce ticket sera supprimé.
+            </p>
+
+            <div class="dialog-field">
+              <label>
+                Coût de réouverture (%)
+                <span class="field-hint">optionnel</span>
+              </label>
+              <div class="cost-input-wrap">
+                <span class="cost-prefix">%</span>
+                <input
+                  v-model.number="reopenPct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  placeholder="10"
+                />
+              </div>
+              <span v-if="cancelCostLoading" class="field-hint">Chargement du dernier coût…</span>
+              <span v-else-if="reopenCost > 0" class="field-hint">
+                = Ar {{ reopenCost.toFixed(2) }} &nbsp;(base : Ar {{ cancelCostBase.toFixed(2) }})
+              </span>
+              <span v-else-if="cancelCostBase === 0 && !cancelCostLoading" class="field-hint">
+                Aucun coût précédent — surcharge non applicable.
+              </span>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="btn-ghost" @click="dismissCancelDialog">Annuler</button>
+              <button class="btn-confirm" style="background:#ef4444" @click="confirmCancelDialog">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+                </svg>
+                Confirmer la réouverture
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- ═══════════════════════════════════════════════════════════
          DIALOG CONFIRMATION STATUT "TERMINÉ"
