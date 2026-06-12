@@ -1150,8 +1150,10 @@ async function importCosts(
     })
 
     const results = Array.isArray(data) ? data : [data]
-    results.forEach((result, idx) => {
+    for (let idx = 0; idx < results.length; idx++) {
+      const result  = results[idx]
       const { ref, ticketId } = pendingCosts[idx]
+
       if (result?.id) {
         addLog('success', `[Coût] Ticket#${ticketId} (Ref#${ref}) créé (ID=${result.id})`)
         stats.created++
@@ -1159,7 +1161,7 @@ async function importCosts(
         addLog('error', `[Coût] Échec pour Ref#${ref}: ${result?.message || 'erreur inconnue'}`)
         stats.errors++
       }
-    })
+    }
   } catch (e: any) {
     addLog('error', `[Coût] Erreur batch: ${e.message}`, e.response?.data)
     for (const { ref } of pendingCosts) {

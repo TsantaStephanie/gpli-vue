@@ -201,6 +201,7 @@ async function confirmDialog() {
         fixedCost:   cost,
         itemCount:   types.length || 1,
         itemTypes:   JSON.stringify(types),
+        source:      'kanban',
       })
     } catch (e) {
       console.warn('[Cost] Erreur enregistrement coût :', e)
