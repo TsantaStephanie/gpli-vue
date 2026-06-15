@@ -59,6 +59,11 @@ export async function deleteLatestTicketCost(ticketId: number): Promise<void> {
   await axios.delete(`${BASE}/ticket/${ticketId}/latest`)
 }
 
+export async function deleteAllTicketCosts(): Promise<void> {
+  await axios.delete(BASE)
+  console.log('[TicketCost] deleteAll → tous les coûts SQLite supprimés')
+}
+
 /**
  * Calcule le rapport de coûts PAR TYPE d'item.
  * Filtre optionnel par source ('glpi' | 'kanban' | undefined = tous).

@@ -98,6 +98,59 @@ const totalGlpi   = computed(() => glpiRecordsRaw.value.reduce((s, r) => s + r.f
 const totalKanban = computed(() => kanbanRecords.value.reduce((s, r) => s + r.fixedCost, 0))
 const totalAll    = computed(() => allRecords.value.reduce((s, r) => s + r.fixedCost, 0))
 
+// ── Tableau récapitulatif : une ligne par type d'actif ─────────────────────
+const tableRows = computed(() => {
+  const types = new Set([
+    ...kanbanByType.value.keys(),
+    ...glpiByType.value.keys(),
+    ...reopenByType.value.keys(),
+  ])
+  return [...types].map(t => ({
+    itemType:   t,
+    superCost:  Math.round((kanbanByType.value.get(t) ?? 0) * 100) / 100,
+    glpiCost:   Math.round((glpiByType.value.get(t)   ?? 0) * 100) / 100,
+    reopenCost: Math.round((reopenByType.value.get(t)  ?? 0) * 100) / 100,
+    total:      Math.round(((kanbanByType.value.get(t) ?? 0) + (glpiByType.value.get(t) ?? 0) + (reopenByType.value.get(t) ?? 0)) * 100) / 100,
+  })).sort((a, b) => b.total - a.total)
+})
+
+const tblSuperTotal  = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.superCost,  0) * 100) / 100)
+const tblGlpiTotal   = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.glpiCost,   0) * 100) / 100)
+const tblReopenTotal = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.reopenCost, 0) * 100) / 100)
+const tblGrandTotal  = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.total,       0) * 100) / 100)
+
+// ── Détail par catégorie (clic sur une ligne) ──────────────────────────────
+const selectedCategory = ref<string | null>(null)
+
+function toggleCategory(itemType: string) {
+  selectedCategory.value = selectedCategory.value === itemType ? null : itemType
+  console.log('[CostReport] catégorie sélectionnée :', selectedCategory.value)
+}
+
+const detailEntries = computed(() => {
+  if (!selectedCategory.value) return []
+  const cat = selectedCategory.value
+  // Parcourir tous les records et extraire les entrées pour ce type
+  const entries: { ticketId: number; ticketTitle: string; source: string; cost: number; date: string }[] = []
+  for (const r of allRecords.value) {
+    let types: string[] = []
+    try { types = JSON.parse(r.itemTypes || '[]') } catch {}
+    if (!types.length) types = ticketItemTypes.value.get(r.ticketId) ?? []
+    if (!types.length) types = ['Non catégorisé']
+    if (!types.includes(cat)) continue
+    const costPerItem = Math.round(r.fixedCost / types.length * 100) / 100
+    entries.push({
+      ticketId:    r.ticketId,
+      ticketTitle: r.ticketTitle,
+      source:      r.source ?? 'kanban',
+      cost:        costPerItem,
+      date:        r.createdAt,
+    })
+  }
+  console.log(`[CostReport] détail ${cat} →`, entries.length, 'entrées')
+  return entries
+})
+
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -204,80 +257,69 @@ onMounted(load)
 
     <template v-else>
 
-      <div class="tabs">
-        <button
-          v-for="tab in [{ key: 'all', label: 'Tous les coûts' }]"
-          :key="tab.key"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.key }"
-          @click="activeTab = (tab.key as any)"
-        >
-          {{ tab.label }}
-          <span class="tab-count">{{ allRecords.length }}</span>
-        </button>
-      </div>
+      <!-- ── Tableau principal ── -->
+      <table class="cost-table">
+        <thead>
+          <tr>
+            <th>Catégorie</th>
+            <th>Super coût</th>
+            <th>Coût GLPI</th>
+            <th>Coût de réouverture</th>
+            <th>Coût total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in tableRows"
+            :key="row.itemType"
+            class="cost-row"
+            :class="{ 'row-selected': selectedCategory === row.itemType }"
+            @click="toggleCategory(row.itemType)"
+          >
+            <td class="cat-cell">
+              <span class="cat-arrow">{{ selectedCategory === row.itemType ? '▾' : '▸' }}</span>
+              {{ typeLabel(row.itemType) }}
+            </td>
+            <td>{{ fmt(row.superCost) }} Ar</td>
+            <td>{{ fmt(row.glpiCost) }} Ar</td>
+            <td>{{ fmt(row.reopenCost) }} Ar</td>
+            <td><strong>{{ fmt(row.total) }} Ar</strong></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td><strong>Total</strong></td>
+            <td><strong>{{ fmt(tblSuperTotal) }} Ar</strong></td>
+            <td><strong>{{ fmt(tblGlpiTotal) }} Ar</strong></td>
+            <td><strong>{{ fmt(tblReopenTotal) }} Ar</strong></td>
+            <td><strong>{{ fmt(tblGrandTotal) }} Ar</strong></td>
+          </tr>
+        </tfoot>
+      </table>
 
-      <div v-if="activeRecords.length === 0" class="tab-empty">
-        Aucun coût pour cette source.
-      </div>
-
-      <div v-else class="type-grid">
-        <div
-          v-for="group in report"
-          :key="group.itemType"
-          class="type-card"
-          :style="{ '--type-color': typeColor(group.itemType) }"
-        >
-          <!-- En-tête carte -->
-          <div class="type-card-head">
-            <div class="type-icon-wrap">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path :d="typeIcon(group.itemType)" />
-              </svg>
-            </div>
-            <div class="type-info">
-              <span class="type-name">{{ typeLabel(group.itemType) }}</span>
-              <span class="type-meta">
-                {{ group.ticketCount }} ticket(s) · {{ group.entries.length }} entrée(s)
-              </span>
-            </div>
-            <div class="type-total">{{ fmt(group.totalCost) }} Ar</div>
-          </div>
-
-          <!-- Détail des coûts par source -->
-          <div class="cost-breakdown">
-            <div class="breakdown-row">
-              <span class="breakdown-label">Super coût</span>
-              <span class="breakdown-val">{{ fmt(kanbanByType.get(group.itemType) ?? 0) }} Ar</span>
-            </div>
-            <div class="breakdown-row breakdown-reopen">
-              <span class="breakdown-label">Coût réouverture</span>
-              <span class="breakdown-val">{{ fmt(reopenByType.get(group.itemType) ?? 0) }} Ar</span>
-            </div>
-            <div class="breakdown-row">
-              <span class="breakdown-label">Coût GLPI</span>
-              <span class="breakdown-val">{{ fmt(glpiByType.get(group.itemType) ?? 0) }} Ar</span>
-            </div>
-          </div>
-
-          <!-- Entrées tickets -->
-          <div class="type-entries">
-            <div
-              v-for="entry in group.entries"
-              :key="entry.recordId + '-' + entry.ticketId"
-              class="entry-row"
-            >
-              <span class="entry-id">#{{ entry.ticketId }}</span>
-              <span class="entry-title">{{ entry.ticketTitle }}</span>
-              <span class="entry-source" :class="sourceClass(entry.source)">
-                {{ sourceLabel(entry.source) }}
-              </span>
-              <span class="entry-date">{{ fmtDate(entry.date) }}</span>
-              <span class="entry-cost">{{ fmt(entry.allocatedCost) }} Ar</span>
-            </div>
-          </div>
-
-        </div>
+      <!-- ── Détail de la catégorie sélectionnée ── -->
+      <div v-if="selectedCategory" class="detail-section">
+        <p class="detail-title">Détail — {{ typeLabel(selectedCategory) }}</p>
+        <table class="cost-table">
+          <thead>
+            <tr>
+              <th>Ticket</th>
+              <th>Source</th>
+              <th>Coût</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(e, i) in detailEntries" :key="i">
+              <td>#{{ e.ticketId }} — {{ e.ticketTitle }}</td>
+              <td>
+                <span class="entry-source" :class="sourceClass(e.source)">
+                  {{ sourceLabel(e.source) }}
+                </span>
+              </td>
+              <td>{{ fmt(e.cost) }} Ar</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
     </template>
@@ -311,65 +353,57 @@ onMounted(load)
 .skel-card { height: 120px; background: #f1f5f9; border-radius: 14px; animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
 
-.tabs { display: flex; gap: .5rem; flex-wrap: wrap; }
-.tab-btn {
-  display: inline-flex; align-items: center; gap: .4rem;
-  padding: .45rem 1rem; border: 1px solid #e2e8f0; border-radius: 8px;
-  background: #fff; font-size: .8125rem; font-weight: 500; color: #64748b;
-  cursor: pointer; transition: all .15s;
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: .875rem;
 }
-.tab-btn:hover  { background: #f8fafc; border-color: #cbd5e1; }
-.tab-btn.active { background: #0f172a; border-color: #0f172a; color: #fff; }
-.tab-count { font-size: .6875rem; font-weight: 700; background: #f1f5f9; color: #64748b; padding: .1rem .45rem; border-radius: 10px; }
-.tab-btn.active .tab-count { background: #ffffff22; color: #fff; }
 
-.tab-empty { padding: 2rem; text-align: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; font-size: .875rem; color: #94a3b8; }
-
-.type-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 1rem; }
-
-.type-card { background: #fff; border: 1px solid #e2e8f0; border-top: 3px solid var(--type-color, #64748b); border-radius: 14px; overflow: hidden; }
-
-.type-card-head { display: flex; align-items: center; gap: .875rem; padding: 1.125rem 1.25rem; border-bottom: 1px solid #f1f5f9; }
-.type-icon-wrap { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--type-color, #64748b) 12%, transparent); color: var(--type-color, #64748b); flex-shrink: 0; }
-.type-info  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .15rem; }
-.type-name  { font-size: .9375rem; font-weight: 700; color: #0f172a; }
-.type-meta  { font-size: .75rem; color: #94a3b8; }
-
-.type-total  { font-size: 1.125rem; font-weight: 800; color: var(--type-color, #64748b); white-space: nowrap; flex-shrink: 0; }
-
-.cost-breakdown { border-bottom: 1px solid #f1f5f9; padding: .4rem 1.25rem; background: #fafafa; }
-.breakdown-row  { display: flex; justify-content: space-between; align-items: center; padding: .2rem 0; font-size: .78rem; }
-.breakdown-label { color: #64748b; }
-.breakdown-val   { font-weight: 600; color: #334155; }
-.breakdown-reopen .breakdown-label { color: #b45309; font-weight: 600; }
-.breakdown-reopen .breakdown-val   { color: #b45309; }
-
-.type-entries { padding: .5rem 0; }
-.entry-row {
-  display: grid;
-  grid-template-columns: 3rem 1fr auto auto auto;
-  align-items: center;
-  gap: .5rem .75rem;
-  padding: .5rem 1.25rem;
-  font-size: .8125rem;
-  border-bottom: 1px solid #f8fafc;
-  transition: background .1s;
+.cost-table th {
+  text-align: left;
+  padding: .75rem 1rem;
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: #64748b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
 }
-.entry-row:last-child { border-bottom: none; }
-.entry-row:hover      { background: #f8fafc; }
 
-.entry-id    { font-family: monospace; font-size: .75rem; color: #94a3b8; }
-.entry-title { color: #334155; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry-source { font-size: .6rem; font-weight: 700; padding: .15rem .45rem; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
-.src-glpi   { background: #fef9c3; color: #92400e; }
-.src-kanban { background: #ede9fe; color: #4c1d95; }
-.src-reopen { background: #fef3c7; color: #b45309; }
-.entry-date  { color: #94a3b8; font-size: .75rem; white-space: nowrap; }
-.entry-cost  { font-weight: 700; color: var(--type-color, #0f172a); white-space: nowrap; }
-
-@media (max-width: 768px) {
-  .type-grid { grid-template-columns: 1fr; }
-  .entry-row { grid-template-columns: 2.5rem 1fr auto auto; }
-  .entry-date { display: none; }
+.cost-table td {
+  padding: .75rem 1rem;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
 }
+
+.cost-table tbody tr:last-child td { border-bottom: none; }
+.cost-table tbody tr:hover td      { background: #f8fafc; }
+
+.cost-table tfoot td {
+  padding: .875rem 1rem;
+  background: #f8fafc;
+  border-top: 2px solid #e2e8f0;
+  color: #0f172a;
+}
+
+.cost-row       { cursor: pointer; transition: background .1s; }
+.cost-row:hover { background: #f1f5f9; }
+.row-selected   { background: #eff6ff !important; }
+.row-selected td { color: #1d4ed8; }
+
+.cat-cell  { display: flex; align-items: center; gap: .5rem; }
+.cat-arrow { font-size: .7rem; color: #94a3b8; width: 1rem; flex-shrink: 0; }
+
+.detail-section   { margin-top: .5rem; }
+.detail-title     { font-size: .875rem; font-weight: 700; color: #1d4ed8; margin-bottom: .5rem; }
+
+.entry-source { font-size: .7rem; font-weight: 700; padding: .15rem .45rem; border-radius: 20px; white-space: nowrap; }
+.src-glpi     { background: #fef9c3; color: #92400e; }
+.src-kanban   { background: #ede9fe; color: #4c1d95; }
+.src-reopen   { background: #fef3c7; color: #b45309; }
 </style>

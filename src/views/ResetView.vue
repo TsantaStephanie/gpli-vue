@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { resetService } from '@/services/api/resetService'
+import { deleteAllTicketCosts } from '@/services/api/ticketCostService'
 
 type ItemStatus = 'pending' | 'processing' | 'done' | 'error'
 
@@ -28,6 +29,7 @@ const ITEM_LABELS: Record<string, string> = {
   Location:         'Localisations',
   Budget:           'Budgets',
   Document:         'Documents',
+  TicketCostSQLite: 'Coûts tickets (SQLite)',
 }
 
 const ITEM_GROUPS = [
@@ -35,6 +37,7 @@ const ITEM_GROUPS = [
   { label: 'ITIL',      keys: ['Ticket','Problem','Change'] },
   { label: 'Logiciels', keys: ['Software'] },
   { label: 'Référentiels', keys: ['SLA','ITILCategory','Location','Budget','Document'] },
+  { label: 'SQLite',       keys: ['TicketCostSQLite'] },
 ]
 
 const state      = ref<'idle' | 'confirm' | 'resetting' | 'done'>('idle')
@@ -65,10 +68,25 @@ async function run() {
   results.value = []
   allItemtypes.forEach(k => { liveStatus[k] = { status: 'pending', count: 0 } })
 
+  // 1. Reset GLPI
   const res = await resetService.resetDatabase((itemtype, status, count) => {
     liveStatus[itemtype] = { status, count }
   })
   results.value = res as ResetResult[]
+
+  // 2. Reset SQLite (ticket_cost)
+  liveStatus['TicketCostSQLite'] = { status: 'processing', count: 0 }
+  try {
+    await deleteAllTicketCosts()
+    liveStatus['TicketCostSQLite'] = { status: 'done', count: 1 }
+    results.value.push({ itemtype: 'TicketCostSQLite', success: true, count: 1 })
+    console.log('[Reset] SQLite ticket_cost vidé')
+  } catch (e: any) {
+    liveStatus['TicketCostSQLite'] = { status: 'error', count: 0 }
+    results.value.push({ itemtype: 'TicketCostSQLite', success: false, count: 0, error: e })
+    console.error('[Reset] Erreur SQLite :', e)
+  }
+
   state.value = 'done'
 }
 </script>
