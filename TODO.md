@@ -23,3 +23,24 @@ champs en pourcentage par exemple 10% ceci est un cout de réouverture (cout en 
 ce cout est stocké dans SQlite 
 
 categorie , super_cost , cout réouverture , cout total 
+
+
+nouvelle page pour import les mouvements des couts
+csv 3 colonnes 
+colonne 1 :ticket 
+colonne 2: mvt
+colonne 3: valeur 
+
+ex: colonne 1 : 2
+    colonne 2: open 
+    colonne 3 : 5 
+
+    colonne 1 : 2 
+    colonne 2 : cancel 
+    colonne : 
+
+    colonne 1 : 2 
+    colonne : closed
+    colonne 3 : 100
+
+dans le tableau cout , lorsque je clique sur une categorie , il y a détail des assets 
