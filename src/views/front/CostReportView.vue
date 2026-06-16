@@ -303,14 +303,16 @@ onMounted(load)
         <table class="cost-table">
           <thead>
             <tr>
-              <th>Ticket</th>
+              <th>N° Ticket</th>
+              <th>Titre</th>
               <th>Source</th>
               <th>Coût</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(e, i) in detailEntries" :key="i">
-              <td>#{{ e.ticketId }} — {{ e.ticketTitle }}</td>
+              <td>#{{ e.ticketId }}</td>
+              <td>{{ e.ticketTitle }}</td>
               <td>
                 <span class="entry-source" :class="sourceClass(e.source)">
                   {{ sourceLabel(e.source) }}
