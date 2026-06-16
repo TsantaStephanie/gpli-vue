@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
-import { applyCostMovement } from '@/services/api/ticketCostService'
+import { saveTicketCost, deleteLatestTicketCost, getLatestTicketCost } from '@/services/api/ticketCostService'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CostMovement {
-  position: number              // numéro dans le CSV (1 = 1er ticket GLPI, 2 = 2ème...)
+  position: number
   mvt:      'open' | 'cancel' | 'closed'
   value:    number | null
   raw:      string
+}
+
+interface TicketInfo {
+  id:    number
+  title: string
+  types: string[]
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -19,17 +25,15 @@ const parseError  = ref('')
 const importDone  = ref<{ success: number; skipped: number; errors: number } | null>(null)
 
 // ─── Parse CSV ────────────────────────────────────────────────────────────────
-// Colonnes : position (1er ticket=1, 2ème=2...), mvt (open|closed|close|cancel), valeur
 function parseCSV(text: string): CostMovement[] {
   const lines  = text.split('\n').map(l => l.trim()).filter(Boolean)
   const result: CostMovement[] = []
   for (const line of lines) {
     const [col1, col2, col3] = line.split(',').map(s => s.trim())
     const position = Number(col1)
-    // 'close' accepté comme alias de 'closed'
-    const rawMvt = col2?.toLowerCase()
-    const mvt    = (rawMvt === 'close' ? 'closed' : rawMvt) as 'open' | 'cancel' | 'closed'
-    const value  = col3 ? Number(col3) : null
+    const rawMvt   = col2?.toLowerCase()
+    const mvt      = (rawMvt === 'close' ? 'closed' : rawMvt) as 'open' | 'cancel' | 'closed'
+    const value    = col3 ? Number(col3) : null
     if (!position || !['open', 'cancel', 'closed'].includes(mvt)) continue
     result.push({ position, mvt, value, raw: line })
   }
@@ -48,13 +52,56 @@ function onFileChange(e: Event) {
   movements.value  = []
   const reader = new FileReader()
   reader.onload = (ev) => {
-    const text = ev.target?.result as string
+    const text      = ev.target?.result as string
     movements.value = parseCSV(text)
     if (!movements.value.length) {
       parseError.value = 'Aucun mouvement valide. Format attendu : position,mvt,valeur'
     }
   }
   reader.readAsText(f)
+}
+
+// ─── insertMvt ────────────────────────────────────────────────────────────────
+// Reçoit un ticketInfo déjà résolu — plus aucun appel réseau ici
+async function insertMvt(
+  info: TicketInfo,
+  mvt:  'open' | 'closed' | 'cancel',
+  valeur: number | null,
+): Promise<'success' | 'skipped'> {
+
+  if (mvt === 'cancel') {
+    await deleteLatestTicketCost(info.id)
+    return 'success'
+  }
+
+  if (!valeur || valeur <= 0) return 'skipped'
+
+  if (mvt === 'open') {
+    const latest = await getLatestTicketCost(info.id)
+    if (!latest) return 'skipped'
+
+    const reopenCost = Math.round(latest.fixedCost * (valeur / 100) * 100) / 100
+    await saveTicketCost({
+      ticketId:    info.id,
+      ticketTitle: info.title,
+      fixedCost:   reopenCost,
+      itemCount:   info.types.length || 1,
+      itemTypes:   JSON.stringify(info.types),
+      source:      'reopen',
+    })
+    return 'success'
+  }
+
+  // closed
+  await saveTicketCost({
+    ticketId:    info.id,
+    ticketTitle: info.title,
+    fixedCost:   valeur,
+    itemCount:   info.types.length || 1,
+    itemTypes:   JSON.stringify(info.types),
+    source:      'kanban',
+  })
+  return 'success'
 }
 
 // ─── Import ───────────────────────────────────────────────────────────────────
@@ -64,61 +111,50 @@ async function importerMouvements() {
   let success = 0, skipped = 0, errors = 0
 
   try {
-    // 1. Récupérer tous les tickets GLPI triés par ID croissant
+    // 1. Chargement unique des tickets, triés par ID croissant
     const allTickets = await fetchAllTickets()
     allTickets.sort((a: any, b: any) => a.id - b.id)
-    console.log('[ImportCout] tickets GLPI chargés:', allTickets.length, '→', allTickets.map((t: any) => t.id))
+    console.log('[ImportCout] tickets GLPI chargés:', allTickets.length)
 
-    // 2. Construire la map position → { glpiId, title, types }
+    // 2. Positions uniques présentes dans le CSV
     const uniquePositions = [...new Set(movements.value.map(m => m.position))]
-    const ticketMap = new Map<number, { id: number; title: string; types: string[] }>()
 
-    await Promise.all(uniquePositions.map(async pos => {
-      const ticket = allTickets[pos - 1]   // pos 1 = index 0
-      if (!ticket) {
-        console.warn(`[ImportCout] position ${pos} → aucun ticket en position ${pos} dans GLPI`)
-        return
-      }
-      const items = await fetchTicketItems(ticket.id).catch(() => [])
-      const types = (items || []).map((i: any) => i.itemtype).filter(Boolean)
-      ticketMap.set(pos, { id: ticket.id, title: ticket.title, types })
-      console.log(`[ImportCout] position ${pos} → ticket#${ticket.id} "${ticket.title}" types:`, types)
-    }))
+    // 3. Pré-chargement en parallèle des items pour chaque position unique
+    const ticketMap = new Map<number, TicketInfo>()
+    await Promise.all(
+      uniquePositions.map(async (pos) => {
+        const ticket = allTickets[pos - 1]
+        if (!ticket) {
+          console.warn(`[ImportCout] position ${pos} → ticket introuvable`)
+          return
+        }
+        const items = await fetchTicketItems(ticket.id).catch(() => [])
+        const types = (items || []).map((i: any) => i.itemtype).filter(Boolean)
+        ticketMap.set(pos, { id: ticket.id, title: ticket.title, types })
+        console.log(`[ImportCout] position ${pos} → ticket#${ticket.id} "${ticket.title}"`)
+      })
+    )
 
-    // 3. Importer chaque mouvement
+    // 4. Boucle d'import — aucun appel réseau supplémentaire pour résoudre le ticket
     for (const m of movements.value) {
       const info = ticketMap.get(m.position)
       if (!info) {
         skipped++
-        console.warn(`[ImportCout] position ${m.position} → ticket introuvable, ignoré`)
+        console.warn(`[ImportCout] position ${m.position} → ignoré (ticket introuvable)`)
         continue
       }
 
       try {
-        // Même fonction que le dialog Kanban (applyCostMovement) : un seul
-        // endroit à faire évoluer si un nouveau type de mouvement apparaît.
-        const result = await applyCostMovement({
-          ticketId:    info.id,
-          ticketTitle: info.title,
-          itemTypes:   info.types,
-          mvt:         m.mvt,
-          value:       m.value,
-        })
-        if (result.applied) {
-          success++
-          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} ${m.mvt} ${m.value ?? ''} → OK`)
-        } else {
-          skipped++
-          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} ${m.mvt} → ignoré (${result.reason})`)
-        }
+        const result = await insertMvt(info, m.mvt, m.value)
+        result === 'success' ? success++ : skipped++
       } catch (e) {
         errors++
-        console.error(`[ImportCout] ticket#${info.id} erreur:`, e)
+        console.error(`[ImportCout] position ${m.position} erreur:`, e)
       }
     }
   } catch (e) {
-    console.error('[ImportCout] Erreur chargement tickets GLPI:', e)
     errors++
+    console.error('[ImportCout] Erreur chargement tickets GLPI:', e)
   }
 
   importing.value  = false
@@ -132,7 +168,7 @@ async function importerMouvements() {
     <h2>Import des mouvements de coûts</h2>
     <p>
       Format CSV : <code>position, mvt, valeur</code><br>
-      <small>Position = rang du ticket dans GLPI (1 = 1er ticket, 2 = 2ème…) — mvt : <code>open</code> | <code>closed</code> | <code>cancel</code></small>
+      <small>Ticket avec status<code>open</code> | <code>closed</code> | <code>cancel</code></small>
     </p>
 
     <!-- Input fichier -->
@@ -187,3 +223,4 @@ async function importerMouvements() {
     </div>
   </div>
 </template>
+
