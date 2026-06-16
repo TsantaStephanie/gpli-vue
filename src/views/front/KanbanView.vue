@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
 import { getKanbanSettings, type KanbanSetting } from '@/services/api/kanbanSettingsService'
-import { saveTicketCost, getLatestTicketCost, deleteLatestTicketCost } from '@/services/api/ticketCostService'
+import { getLatestTicketCost, applyCostMovement } from '@/services/api/ticketCostService'
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router  = useRouter()
@@ -239,7 +239,13 @@ async function annulerFermeture() {
   await applyStatusChange(ticket, 2)
 
   try {
-    await deleteLatestTicketCost(ticket.id)
+    await applyCostMovement({
+      ticketId:    ticket.id,
+      ticketTitle: ticket.title,
+      itemTypes:   [],
+      mvt:         'cancel',
+      value:       null,
+    })
   } catch (e) {
     console.warn('[Cost] Erreur suppression coût :', e)
   }
@@ -257,13 +263,16 @@ async function confirmCancelDialog() {
   if (reopenCost.value > 0) {
     const types = cancelDialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
     try {
-      await saveTicketCost({
-        ticketId:    ticket.id,
-        ticketTitle: ticket.title,
-        fixedCost:   reopenCost.value,
-        itemCount:   types.length || 1,
-        itemTypes:   JSON.stringify(types),
-        source:      'reopen',
+      await applyCostMovement({
+        ticketId:        ticket.id,
+        ticketTitle:     ticket.title,
+        itemTypes:       types,
+        mvt:             'open',
+        value:           Number(reopenPct.value),
+        // Coût déjà calculé à partir du cache (cancelCostBase chargé à l'ouverture
+        // du dialog) → aucun fetch supplémentaire, comportement inchangé par rapport
+        // à l'ancien appel direct à saveTicketCost(reopenCost.value).
+        precomputedCost: reopenCost.value,
       })
     } catch (e) {
       console.warn('[Cost] Erreur enregistrement coût réouverture :', e)
@@ -282,13 +291,12 @@ async function confirmDialog() {
   if (cost > 0) {
     const types = dialogItems.value.map((i: any) => i.itemtype).filter(Boolean)
     try {
-      await saveTicketCost({
+      await applyCostMovement({
         ticketId:    ticket.id,
         ticketTitle: ticket.title,
-        fixedCost:   cost,
-        itemCount:   types.length || 1,
-        itemTypes:   JSON.stringify(types),
-        source:      'kanban',
+        itemTypes:   types,
+        mvt:         'closed',
+        value:       cost,
       })
     } catch (e) {
       console.warn('[Cost] Erreur enregistrement coût :', e)

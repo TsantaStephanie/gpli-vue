@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
-import { saveTicketCost, deleteLatestTicketCost, getLatestTicketCost } from '@/services/api/ticketCostService'
+import { applyCostMovement } from '@/services/api/ticketCostService'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CostMovement {
@@ -95,52 +95,21 @@ async function importerMouvements() {
       }
 
       try {
-        // cancel → supprime le dernier coût SQLite du ticket
-        if (m.mvt === 'cancel') {
-          await deleteLatestTicketCost(info.id)
+        // Même fonction que le dialog Kanban (applyCostMovement) : un seul
+        // endroit à faire évoluer si un nouveau type de mouvement apparaît.
+        const result = await applyCostMovement({
+          ticketId:    info.id,
+          ticketTitle: info.title,
+          itemTypes:   info.types,
+          mvt:         m.mvt,
+          value:       m.value,
+        })
+        if (result.applied) {
           success++
-          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} cancel → dernier coût supprimé`)
-          continue
-        }
-
-        if (!m.value || m.value <= 0) {
-          skipped++
-          console.log(`[ImportCout] position ${m.position} mvt:${m.mvt} → ignoré (valeur vide)`)
-          continue
-        }
-
-        if (m.mvt === 'open') {
-          // open → valeur = % de réouverture (comme le dialog Kanban)
-          // on récupère le dernier coût SQLite du ticket pour calculer le montant
-          const latest = await getLatestTicketCost(info.id)
-          if (!latest) {
-            skipped++
-            console.warn(`[ImportCout] position ${m.position} → ticket#${info.id} open ${m.value}% → aucun coût précédent, ignoré`)
-            continue
-          }
-          const reopenCost = Math.round(latest.fixedCost * (m.value / 100) * 100) / 100
-          await saveTicketCost({
-            ticketId:    info.id,
-            ticketTitle: info.title,
-            fixedCost:   reopenCost,
-            itemCount:   info.types.length || 1,
-            itemTypes:   JSON.stringify(info.types),
-            source:      'reopen',
-          })
-          success++
-          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} open ${m.value}% de ${latest.fixedCost} = ${reopenCost} Ar → OK`)
+          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} ${m.mvt} ${m.value ?? ''} → OK`)
         } else {
-          // closed → valeur en Ar directement (super coût)
-          await saveTicketCost({
-            ticketId:    info.id,
-            ticketTitle: info.title,
-            fixedCost:   m.value,
-            itemCount:   info.types.length || 1,
-            itemTypes:   JSON.stringify(info.types),
-            source:      'kanban',
-          })
-          success++
-          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} closed ${m.value} Ar → OK`)
+          skipped++
+          console.log(`[ImportCout] position ${m.position} → ticket#${info.id} ${m.mvt} → ignoré (${result.reason})`)
         }
       } catch (e) {
         errors++

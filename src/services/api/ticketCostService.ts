@@ -64,6 +64,88 @@ export async function deleteAllTicketCosts(): Promise<void> {
   console.log('[TicketCost] deleteAll → tous les coûts SQLite supprimés')
 }
 
+// ─── Mouvement de coût unifié ──────────────────────────────────────────────
+// Fonction UNIQUE partagée entre l'interface (dialogs Kanban) et l'import CSV
+// (back office), pour garantir le même comportement partout et faciliter
+// l'ajout d'un futur type de mouvement (un seul endroit à modifier).
+export type CostMovementType = 'open' | 'closed' | 'cancel'
+
+export interface CostMovementInput {
+  ticketId:    number
+  ticketTitle: string
+  itemTypes:   string[]       // types d'actifs liés au ticket
+  mvt:         CostMovementType
+  value:       number | null  // 'open' = % de réouverture, 'closed' = montant Ar, 'cancel' = ignoré
+  // 'open' uniquement (optionnel) : montant déjà calculé par l'appelant (ex. dialog
+  // Kanban qui a déjà mis en cache le dernier coût). Si fourni, AUCUN fetch ni
+  // recalcul n'est fait ici → comportement strictement identique à avant la factorisation.
+  precomputedCost?: number
+}
+
+export interface CostMovementResult {
+  applied: boolean
+  reason?: string
+  record?: TicketCostRecord
+}
+
+export async function applyCostMovement(input: CostMovementInput): Promise<CostMovementResult> {
+  const { ticketId, ticketTitle, itemTypes, mvt, value } = input
+  const itemCount     = itemTypes.length || 1
+  const itemTypesJson = JSON.stringify(itemTypes)
+  console.log('[CostMovement] applyCostMovement →', input)
+
+  if (mvt === 'cancel') {
+    await deleteLatestTicketCost(ticketId)
+    console.log(`[CostMovement] ticket#${ticketId} cancel → dernier coût supprimé`)
+    return { applied: true }
+  }
+
+  if (!value || value <= 0) {
+    console.log(`[CostMovement] ticket#${ticketId} mvt:${mvt} → ignoré (valeur vide)`)
+    return { applied: false, reason: 'valeur vide' }
+  }
+
+  if (mvt === 'open') {
+    let reopenCost: number
+
+    if (input.precomputedCost != null) {
+      // Coût déjà calculé par l'appelant (cache déjà en mémoire) → pas de fetch,
+      // logique identique à l'ancien code du dialog Kanban.
+      reopenCost = input.precomputedCost
+      console.log(`[CostMovement] ticket#${ticketId} open → precomputedCost fourni = ${reopenCost} Ar (pas de fetch)`)
+    } else {
+      // % de réouverture appliqué sur le dernier coût SQLite connu (cas import CSV)
+      const latest = await getLatestTicketCost(ticketId)
+      if (!latest) {
+        console.warn(`[CostMovement] ticket#${ticketId} open ${value}% → aucun coût précédent, ignoré`)
+        return { applied: false, reason: 'aucun coût précédent' }
+      }
+      reopenCost = Math.round(latest.fixedCost * (value / 100) * 100) / 100
+      console.log(`[CostMovement] ticket#${ticketId} open ${value}% de ${latest.fixedCost} = ${reopenCost} Ar → OK`)
+    }
+
+    const record = await saveTicketCost({
+      ticketId, ticketTitle,
+      fixedCost: reopenCost,
+      itemCount,
+      itemTypes: itemTypesJson,
+      source:    'reopen',
+    })
+    return { applied: true, record }
+  }
+
+  // mvt === 'closed' → montant Ar direct (super coût)
+  const record = await saveTicketCost({
+    ticketId, ticketTitle,
+    fixedCost: value,
+    itemCount,
+    itemTypes: itemTypesJson,
+    source:    'kanban',
+  })
+  console.log(`[CostMovement] ticket#${ticketId} closed ${value} Ar → OK`)
+  return { applied: true, record }
+}
+
 /**
  * Calcule le rapport de coûts PAR TYPE d'item.
  * Filtre optionnel par source ('glpi' | 'kanban' | undefined = tous).
