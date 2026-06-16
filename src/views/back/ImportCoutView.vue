@@ -24,6 +24,8 @@ const importing   = ref(false)
 const parseError  = ref('')
 const importDone  = ref<{ success: number; skipped: number; errors: number } | null>(null)
 
+let ticketMap = new Map<number, TicketInfo>()
+
 // ─── Parse CSV ────────────────────────────────────────────────────────────────
 function parseCSV(text: string): CostMovement[] {
   const lines  = text.split('\n').map(l => l.trim()).filter(Boolean)
@@ -62,12 +64,120 @@ function onFileChange(e: Event) {
 }
 
 // ─── insertMvt ────────────────────────────────────────────────────────────────
-// Reçoit un ticketInfo déjà résolu — plus aucun appel réseau ici
+// // Reçoit un ticketInfo déjà résolu — plus aucun appel réseau ici
+// async function insertMvt(
+//   info: TicketInfo,
+//   mvt:  'open' | 'closed' | 'cancel',
+//   valeur: number | null,
+// ): Promise<'success' | 'skipped'> {
+
+//   if (mvt === 'cancel') {
+//     await deleteLatestTicketCost(info.id)
+//     return 'success'
+//   }
+
+//   if (!valeur || valeur <= 0) return 'skipped'
+
+//   if (mvt === 'open') {
+//     const latest = await getLatestTicketCost(info.id)
+//     if (!latest) return 'skipped'
+
+//     const reopenCost = Math.round(latest.fixedCost * (valeur / 100) * 100) / 100
+//     await saveTicketCost({
+//       ticketId:    info.id,
+//       ticketTitle: info.title,
+//       fixedCost:   reopenCost,
+//       itemCount:   info.types.length || 1,
+//       itemTypes:   JSON.stringify(info.types),
+//       source:      'reopen',
+//     })
+//     return 'success'
+//   }
+
+//   // closed
+//   await saveTicketCost({
+//     ticketId:    info.id,
+//     ticketTitle: info.title,
+//     fixedCost:   valeur,
+//     itemCount:   info.types.length || 1,
+//     itemTypes:   JSON.stringify(info.types),
+//     source:      'kanban',
+//   })
+//   return 'success'
+// }
+
+// // ─── Import ───────────────────────────────────────────────────────────────────
+// async function importerMouvements() {
+//   importing.value  = true
+//   importDone.value = null
+//   let success = 0, skipped = 0, errors = 0
+
+//   try {
+//     // 1. Chargement unique des tickets, triés par ID croissant
+//     const allTickets = await fetchAllTickets()
+//     allTickets.sort((a: any, b: any) => a.id - b.id)
+//     console.log('[ImportCout] tickets GLPI chargés:', allTickets.length)
+
+//     // 2. Positions uniques présentes dans le CSV
+//     const uniquePositions = [...new Set(movements.value.map(m => m.position))]
+
+//     // 3. Pré-chargement en parallèle des items pour chaque position unique
+//     const ticketMap = new Map<number, TicketInfo>()
+//     await Promise.all(
+//       uniquePositions.map(async (pos) => {
+//         const ticket = allTickets[pos - 1]
+//         if (!ticket) {
+//           console.warn(`[ImportCout] position ${pos} → ticket introuvable`)
+//           return
+//         }
+//         const items = await fetchTicketItems(ticket.id).catch(() => [])
+//         const types = (items || []).map((i: any) => i.itemtype).filter(Boolean)
+//         ticketMap.set(pos, { id: ticket.id, title: ticket.title, types })
+//         console.log(`[ImportCout] position ${pos} → ticket#${ticket.id} "${ticket.title}"`)
+//       })
+//     )
+
+//     // 4. Boucle d'import — aucun appel réseau supplémentaire pour résoudre le ticket
+//     for (const m of movements.value) {
+//       const info = ticketMap.get(m.position)
+//       if (!info) {
+//         skipped++
+//         console.warn(`[ImportCout] position ${m.position} → ignoré (ticket introuvable)`)
+//         continue
+//       }
+
+//       try {
+//         const result = await insertMvt(info, m.mvt, m.value)
+//         result === 'success' ? success++ : skipped++
+//       } catch (e) {
+//         errors++
+//         console.error(`[ImportCout] position ${m.position} erreur:`, e)
+//       }
+//     }
+//   } catch (e) {
+//     errors++
+//     console.error('[ImportCout] Erreur chargement tickets GLPI:', e)
+//   }
+
+//   importing.value  = false
+//   importDone.value = { success, skipped, errors }
+//   console.log('[ImportCout] terminé →', importDone.value)
+// }
+// ─── insertMvt ────────────────────────────────────────────────────────────────
+// 3 arguments : position CSV, mvt, valeur
+// Résolution du ticket via ticketMap construite avant la boucle (closure)
 async function insertMvt(
-  info: TicketInfo,
-  mvt:  'open' | 'closed' | 'cancel',
-  valeur: number | null,
+  position: number,
+  mvt:      'open' | 'cancel' | 'closed',
+  valeur:   number | null,
 ): Promise<'success' | 'skipped'> {
+
+  // Résolution de la ref via la map pré-chargée
+  const info = ticketMap.get(position)
+  if (!info) {
+    console.warn(`[ImportCout] position ${position} → ticket introuvable, ignoré`)
+    return 'skipped'
+  }
 
   if (mvt === 'cancel') {
     await deleteLatestTicketCost(info.id)
@@ -111,7 +221,7 @@ async function importerMouvements() {
   let success = 0, skipped = 0, errors = 0
 
   try {
-    // 1. Chargement unique des tickets, triés par ID croissant
+    // 1. Chargement unique des tickets triés par ID croissant
     const allTickets = await fetchAllTickets()
     allTickets.sort((a: any, b: any) => a.id - b.id)
     console.log('[ImportCout] tickets GLPI chargés:', allTickets.length)
@@ -120,7 +230,7 @@ async function importerMouvements() {
     const uniquePositions = [...new Set(movements.value.map(m => m.position))]
 
     // 3. Pré-chargement en parallèle des items pour chaque position unique
-    const ticketMap = new Map<number, TicketInfo>()
+    ticketMap = new Map<number, TicketInfo>()
     await Promise.all(
       uniquePositions.map(async (pos) => {
         const ticket = allTickets[pos - 1]
@@ -135,17 +245,10 @@ async function importerMouvements() {
       })
     )
 
-    // 4. Boucle d'import — aucun appel réseau supplémentaire pour résoudre le ticket
+    // 4. Boucle d'import — insertMvt résout la position via ticketMap (closure)
     for (const m of movements.value) {
-      const info = ticketMap.get(m.position)
-      if (!info) {
-        skipped++
-        console.warn(`[ImportCout] position ${m.position} → ignoré (ticket introuvable)`)
-        continue
-      }
-
       try {
-        const result = await insertMvt(info, m.mvt, m.value)
+        const result = await insertMvt(m.position, m.mvt, m.value)
         result === 'success' ? success++ : skipped++
       } catch (e) {
         errors++
