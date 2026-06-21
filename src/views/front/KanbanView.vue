@@ -4,7 +4,13 @@ import { useRouter } from 'vue-router'
 import { fetchAllTickets, fetchTicketItems } from '@/services/api/ticketService'
 import { glpiClient } from '@/services/api/glpiClient'
 import { getKanbanSettings, type KanbanSetting } from '@/services/api/kanbanSettingsService'
-import { getLatestTicketCost, applyCostMovement } from '@/services/api/ticketCostService'
+import {
+  getTicketCosts,
+  computeReopenBase,
+  applyCostMovement,
+  type ReopenBaseMode,
+  type TicketCostRecord,
+} from '@/services/api/ticketCostService'
 import type { Ticket, TicketStatus } from '@/models/Ticket'
 
 const router  = useRouter()
@@ -189,31 +195,36 @@ function cancelDialog() {
 // ── Dialog annulation "Terminé → En cours" ──────────────────────
 const showCancelDialog    = ref(false)
 const cancelDialogTicket  = ref<Ticket | null>(null)
-const cancelCostBase      = ref(0)
+const cancelCostRecords   = ref<TicketCostRecord[]>([])   // tous les coûts SQLite du ticket
 const cancelCostLoading   = ref(false)
 const cancelDialogItems   = ref<any[]>([])
 const reopenPct           = ref<number | ''>(10)
+const reopenMode          = ref<ReopenBaseMode>(1)
+
+const cancelCostBase = computed (() => computeReopenBase(cancelCostRecords.value , reopenMode.value) ?? 0)
 
 const reopenCost = computed(() => {
   const pct = Number(reopenPct.value)
   if (!pct || !cancelCostBase.value) return 0
-  return Math.round(cancelCostBase.value * pct / 100 * 100) / 100
+  return cancelCostBase.value * pct / 100
 })
 
 async function openCancelDialog(ticket: Ticket) {
   cancelDialogTicket.value = ticket
   reopenPct.value          = 10
-  cancelCostBase.value     = 0
+  reopenMode.value= 1
+  cancelCostRecords.value  = []
   cancelDialogItems.value  = []
   showCancelDialog.value   = true
   cancelCostLoading.value  = true
   try {
-    const [latestRes, itemsRes] = await Promise.allSettled([
-      getLatestTicketCost(ticket.id),
+    const [costsRes, itemsRes] = await Promise.allSettled([
+      getTicketCosts(ticket.id),
       fetchTicketItems(ticket.id),
     ])
-    if (latestRes.status === 'fulfilled' && latestRes.value) {
-      cancelCostBase.value = latestRes.value.fixedCost
+    if (costsRes.status === 'fulfilled') {
+      cancelCostRecords.value = costsRes.value
+      console.log(`[Kanban] ticket#${ticket.id} → ${costsRes.value.length} coût(s) SQLite chargé(s)`)
     }
     if (itemsRes.status === 'fulfilled' && Array.isArray(itemsRes.value)) {
       cancelDialogItems.value = itemsRes.value
@@ -269,9 +280,9 @@ async function confirmCancelDialog() {
         itemTypes:       types,
         mvt:             'open',
         value:           Number(reopenPct.value),
-        // Coût déjà calculé à partir du cache (cancelCostBase chargé à l'ouverture
-        // du dialog) → aucun fetch supplémentaire, comportement inchangé par rapport
-        // à l'ancien appel direct à saveTicketCost(reopenCost.value).
+        mode: reopenMode.value,
+        // Coût déjà calculé côté UI (cancelCostBase selon le mode choisi) → aucun
+        // fetch supplémentaire, le serveur reçoit directement le montant final.
         precomputedCost: reopenCost.value,
       })
     } catch (e) {
@@ -593,6 +604,18 @@ onMounted(() => { load(); loadSettings() })
               <strong>En cours</strong>.<br>
               Choisissez comment gérer le super coût.
             </p>
+
+            <div class="dialog-field">
+              <label>
+                Mode de calcul de la base 
+              </label>
+              <select v-model.number="reopenMode">
+                <option :value="1">1 -Dernier cout</option>
+                <option :value="2">2 -Premier cout</option>
+                <option :value="3">3 - Moyenne des couts</option>
+                <option :value="4">4 - Somme des couts</option>
+              </select>
+            </div>
 
             <div class="dialog-field">
               <label>

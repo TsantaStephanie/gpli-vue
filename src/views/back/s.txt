@@ -1,0 +1,7 @@
+terminé ticket 1 =50
+terminé ticket 2 = 150
+ouvrir ticket 1 = 5% mode 1
+terminé ticket 1 = 46 
+ouvrir ticket 1 = 10% mode 4
+ouvrir ticket 2 = 10% mode 3
+terminé ticket 2 = 300 

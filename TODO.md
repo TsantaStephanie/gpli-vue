@@ -44,3 +44,22 @@ ex: colonne 1 : 2
     colonne 3 : 100
 
 dans le tableau cout , lorsque je clique sur une categorie , il y a détail des assets 
+
+
+fonctionnalité:
+mode de calcul pour calculer le pourcentage de réouverture
+mode 1 :prendre le dernier super cout saisi
+mode 2 : prendre le premier super cout saisi
+mode 3:prendre la moyenne des super couts saisi 
+mode 4 : prendre somme des super couts saisi 
+
+mettre ceci dans l'interface de dialogue avec les choix 1 2 3 4 (pour choisir le mode) 
+
+dans import , on ajoute une colonne mode ,ceci s'applique juste avec le mvt open 
+
+ex: colonne 1 : 2
+    colonne 2: open 
+    colonne 3 : 5 
+    colonne 4 : 1(mode)
+
+le super cout peut etre 0 

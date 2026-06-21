@@ -83,7 +83,7 @@ function sumByType(recs: TicketCostRecord[]): Map<string, number> {
     if (!types.length) types = [FALLBACK_TYPE]
     const costPerItem = r.fixedCost / types.length
     for (const t of types) {
-      map.set(t, Math.round(((map.get(t) ?? 0) + costPerItem) * 100) / 100)
+      map.set(t, (map.get(t) ?? 0) + costPerItem)
     }
   }
   return map
@@ -107,17 +107,17 @@ const tableRows = computed(() => {
   ])
   return [...types].map(t => ({
     itemType:   t,
-    superCost:  Math.round((kanbanByType.value.get(t) ?? 0) * 100) / 100,
-    glpiCost:   Math.round((glpiByType.value.get(t)   ?? 0) * 100) / 100,
-    reopenCost: Math.round((reopenByType.value.get(t)  ?? 0) * 100) / 100,
-    total:      Math.round(((kanbanByType.value.get(t) ?? 0) + (glpiByType.value.get(t) ?? 0) + (reopenByType.value.get(t) ?? 0)) * 100) / 100,
+    superCost:  kanbanByType.value.get(t) ?? 0,
+    glpiCost:   glpiByType.value.get(t)   ?? 0,
+    reopenCost: reopenByType.value.get(t) ?? 0,
+    total:      (kanbanByType.value.get(t) ?? 0) + (glpiByType.value.get(t) ?? 0) + (reopenByType.value.get(t) ?? 0),
   })).sort((a, b) => b.total - a.total)
 })
 
-const tblSuperTotal  = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.superCost,  0) * 100) / 100)
-const tblGlpiTotal   = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.glpiCost,   0) * 100) / 100)
-const tblReopenTotal = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.reopenCost, 0) * 100) / 100)
-const tblGrandTotal  = computed(() => Math.round(tableRows.value.reduce((s, r) => s + r.total,       0) * 100) / 100)
+const tblSuperTotal  = computed(() => tableRows.value.reduce((s, r) => s + r.superCost,  0))
+const tblGlpiTotal   = computed(() => tableRows.value.reduce((s, r) => s + r.glpiCost,   0))
+const tblReopenTotal = computed(() => tableRows.value.reduce((s, r) => s + r.reopenCost, 0))
+const tblGrandTotal  = computed(() => tableRows.value.reduce((s, r) => s + r.total,      0))
 
 // ── Détail par catégorie (clic sur une ligne) ──────────────────────────────
 const selectedCategory = ref<string | null>(null)
@@ -138,7 +138,7 @@ const detailEntries = computed(() => {
     if (!types.length) types = ticketItemTypes.value.get(r.ticketId) ?? []
     if (!types.length) types = ['Non catégorisé']
     if (!types.includes(cat)) continue
-    const costPerItem = Math.round(r.fixedCost / types.length * 100) / 100
+    const costPerItem = r.fixedCost / types.length
     entries.push({
       ticketId:    r.ticketId,
       ticketTitle: r.ticketTitle,
@@ -153,7 +153,7 @@ const detailEntries = computed(() => {
 
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
+    minimumFractionDigits: 3, maximumFractionDigits: 3,
   }).format(n)
 }
 function fmtDate(d: string) {
@@ -262,10 +262,10 @@ onMounted(load)
         <thead>
           <tr>
             <th>Catégorie</th>
-            <th>Super coût</th>
-            <th>Coût GLPI</th>
-            <th>Coût de réouverture</th>
-            <th>Coût total</th>
+            <th>glpi</th>
+            <th>reouverture</th>
+            <th>supercost</th>
+            <th>Total général</th>
           </tr>
         </thead>
         <tbody>
@@ -280,19 +280,19 @@ onMounted(load)
               <span class="cat-arrow">{{ selectedCategory === row.itemType ? '▾' : '▸' }}</span>
               {{ typeLabel(row.itemType) }}
             </td>
-            <td>{{ fmt(row.superCost) }} Ar</td>
-            <td>{{ fmt(row.glpiCost) }} Ar</td>
-            <td>{{ fmt(row.reopenCost) }} Ar</td>
-            <td><strong>{{ fmt(row.total) }} Ar</strong></td>
+            <td>{{ row.glpiCost   ? fmt(row.glpiCost)   : '' }}</td>
+            <td>{{ row.reopenCost ? fmt(row.reopenCost) : '' }}</td>
+            <td>{{ row.superCost  ? fmt(row.superCost)  : '' }}</td>
+            <td><strong>{{ fmt(row.total) }}</strong></td>
           </tr>
         </tbody>
         <tfoot>
           <tr>
-            <td><strong>Total</strong></td>
-            <td><strong>{{ fmt(tblSuperTotal) }} Ar</strong></td>
-            <td><strong>{{ fmt(tblGlpiTotal) }} Ar</strong></td>
-            <td><strong>{{ fmt(tblReopenTotal) }} Ar</strong></td>
-            <td><strong>{{ fmt(tblGrandTotal) }} Ar</strong></td>
+            <td><strong>Total général</strong></td>
+            <td><strong>{{ fmt(tblGlpiTotal) }}</strong></td>
+            <td><strong>{{ fmt(tblReopenTotal) }}</strong></td>
+            <td><strong>{{ fmt(tblSuperTotal) }}</strong></td>
+            <td><strong>{{ fmt(tblGrandTotal) }}</strong></td>
           </tr>
         </tfoot>
       </table>

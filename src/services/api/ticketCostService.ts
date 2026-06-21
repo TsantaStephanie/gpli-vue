@@ -55,6 +55,12 @@ export async function getLatestTicketCost(ticketId: number): Promise<TicketCostR
   }
 }
 
+export async function getTicketCosts(ticketId: number): Promise<TicketCostRecord[]> {
+  const res = await axios.get<TicketCostRecord[]>(`${BASE}/ticket/${ticketId}`)
+  console.log(`[TicketCost] getTicketCosts(${ticketId}) →`, res.data.length, 'enregistrement(s)')
+  return res.data
+}
+
 export async function deleteLatestTicketCost(ticketId: number): Promise<void> {
   await axios.delete(`${BASE}/ticket/${ticketId}/latest`)
 }
@@ -70,18 +76,41 @@ export async function deleteAllTicketCosts(): Promise<void> {
 // l'ajout d'un futur type de mouvement (un seul endroit à modifier).
 export type CostMovementType = 'open' | 'closed' | 'cancel'
 
+export type ReopenBaseMode = 1 | 2 | 3 | 4
+
 export interface CostMovementInput {
   ticketId:    number
   ticketTitle: string
   itemTypes:   string[]       // types d'actifs liés au ticket
   mvt:         CostMovementType
-  value:       number | null  // 'open' = % de réouverture, 'closed' = montant Ar, 'cancel' = ignoré
-  // 'open' uniquement (optionnel) : montant déjà calculé par l'appelant (ex. dialog
-  // Kanban qui a déjà mis en cache le dernier coût). Si fourni, AUCUN fetch ni
-  // recalcul n'est fait ici → comportement strictement identique à avant la factorisation.
+  value:       number | null 
   precomputedCost?: number
+  mode?: ReopenBaseMode
 }
 
+
+export function computeReopenBase(costs: TicketCostRecord[], mode: ReopenBaseMode): number | null {
+  const superCosts = costs.filter(c=> c.source==='kanban').sort((a,b) =>a.id-b.id)
+  console.log('[CostMovement] computeReopenBase mode ${mode} -> super couts:' , superCosts.map(c=> c.fixedCost))
+  if(!superCosts.length) return null
+
+  switch (mode) {
+  case 2:
+    return superCosts[0].fixedCost
+  case 3: {
+    const sum = superCosts.reduce((s, c) => s + c.fixedCost, 0)
+    return sum / superCosts.length
+  }
+  case 4:
+    return superCosts.reduce((s, c) => s + c.fixedCost, 0)
+  case 1:
+  default:
+    return superCosts[superCosts.length - 1].fixedCost
+  }
+}
+
+
+ 
 export interface CostMovementResult {
   applied: boolean
   reason?: string
@@ -114,14 +143,15 @@ export async function applyCostMovement(input: CostMovementInput): Promise<CostM
       reopenCost = input.precomputedCost
       console.log(`[CostMovement] ticket#${ticketId} open → precomputedCost fourni = ${reopenCost} Ar (pas de fetch)`)
     } else {
-      // % de réouverture appliqué sur le dernier coût SQLite connu (cas import CSV)
-      const latest = await getLatestTicketCost(ticketId)
-      if (!latest) {
-        console.warn(`[CostMovement] ticket#${ticketId} open ${value}% → aucun coût précédent, ignoré`)
-        return { applied: false, reason: 'aucun coût précédent' }
+      const mode = input.mode ?? 1
+      const costs = await getTicketCosts(ticketId)
+      const base  = computeReopenBase(costs, mode)
+      if (base == null) {
+        console.warn(`[CostMovement] ticket#${ticketId} open ${value}% (mode ${mode}) → aucun coût super trouvé, ignoré`)
+        return { applied: false, reason: 'aucun super coût trouvé' }
       }
-      reopenCost = Math.round(latest.fixedCost * (value / 100) * 100) / 100
-      console.log(`[CostMovement] ticket#${ticketId} open ${value}% de ${latest.fixedCost} = ${reopenCost} Ar → OK`)
+      reopenCost = base * (value / 100)
+      console.log(`[CostMovement] ticket#${ticketId} open ${value}% (mode ${mode}) de base ${base} = ${reopenCost} Ar → OK`)
     }
 
     const record = await saveTicketCost({
@@ -205,7 +235,7 @@ export async function fetchGlpiTicketCosts(): Promise<TicketCostRecord[]> {
       id:          -(idx + 1),           // ID négatif pour éviter collision avec SQLite
       ticketId:    c.tickets_id as number,
       ticketTitle: info.title,
-      fixedCost:   Math.round(calcTotal(c) * 100) / 100,
+      fixedCost:   calcTotal(c),
       itemCount,
       itemTypes:   JSON.stringify(info.itemTypes),
       source:      'glpi' as CostSource,
@@ -245,7 +275,7 @@ export function computeCostReport(
         recordId:      r.id,
         ticketId:      r.ticketId,
         ticketTitle:   r.ticketTitle,
-        allocatedCost: Math.round(costPerItem * 100) / 100,
+        allocatedCost: costPerItem,
         source:        r.source ?? 'kanban',
         date:          r.createdAt,
       })
@@ -255,7 +285,7 @@ export function computeCostReport(
   return [...map.entries()]
     .map(([itemType, { totalCost, ticketIds, entries }]) => ({
       itemType,
-      totalCost:   Math.round(totalCost * 100) / 100,
+      totalCost,
       ticketCount: ticketIds.size,
       entries,
     }))
