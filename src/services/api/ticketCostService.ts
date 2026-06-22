@@ -10,11 +10,21 @@ export interface TicketCostPayload {
   itemCount:   number
   itemTypes:   string        // JSON sérialisé : '["Computer","Monitor"]'
   source:      CostSource
+  reopenPct?:  number | null   // % de réouverture (ex: 10 pour 10%), null si source != 'reopen'
+  reopenMode?: number | null   // mode 1-4, null si source != 'reopen'
 }
 
 export interface TicketCostRecord extends TicketCostPayload {
-  id:        number
-  createdAt: string
+  id:          number
+  createdAt:   string
+  reopenPct?:  number | null
+  reopenMode?: number | null
+}
+
+export interface TicketCostUpdate {
+  fixedCost:   number
+  reopenPct?:  number | null
+  reopenMode?: number | null
 }
 
 /** Ligne individuelle dans une section "par type d'item" */
@@ -65,6 +75,17 @@ export async function deleteLatestTicketCost(ticketId: number): Promise<void> {
   await axios.delete(`${BASE}/ticket/${ticketId}/latest`)
 }
 
+export async function updateTicketCostById(id: number, payload: TicketCostUpdate): Promise<TicketCostRecord> {
+  console.log(`[TicketCost] updateById(${id})`, payload)
+  const res = await axios.put<TicketCostRecord>(`${BASE}/${id}`, payload)
+  return res.data
+}
+
+export async function deleteTicketCostById(id: number): Promise<void> {
+  console.log(`[TicketCost] deleteById(${id})`)
+  await axios.delete(`${BASE}/${id}`)
+}
+
 export async function deleteAllTicketCosts(): Promise<void> {
   await axios.delete(BASE)
   console.log('[TicketCost] deleteAll → tous les coûts SQLite supprimés')
@@ -91,7 +112,7 @@ export interface CostMovementInput {
 
 export function computeReopenBase(costs: TicketCostRecord[], mode: ReopenBaseMode): number | null {
   const superCosts = costs.filter(c=> c.source==='kanban').sort((a,b) =>a.id-b.id)
-  console.log('[CostMovement] computeReopenBase mode ${mode} -> super couts:' , superCosts.map(c=> c.fixedCost))
+  console.log(`[CostMovement] computeReopenBase mode ${mode} -> super couts:`, superCosts.map(c => c.fixedCost))
   if(!superCosts.length) return null
 
   switch (mode) {
@@ -156,10 +177,12 @@ export async function applyCostMovement(input: CostMovementInput): Promise<CostM
 
     const record = await saveTicketCost({
       ticketId, ticketTitle,
-      fixedCost: reopenCost,
+      fixedCost:  reopenCost,
       itemCount,
-      itemTypes: itemTypesJson,
-      source:    'reopen',
+      itemTypes:  itemTypesJson,
+      source:     'reopen',
+      reopenPct:  value,
+      reopenMode: input.mode ?? 1,
     })
     return { applied: true, record }
   }

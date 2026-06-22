@@ -81,6 +81,12 @@ const router = createRouter({
           component: () => import('@/views/back/ImportCoutView.vue'),
           meta: { title: 'Import des mouvements' },
         },
+        {
+          path: 'cost-management',
+          name: 'cost-management',
+          component: () => import('@/views/back/CostManagementView.vue'),
+          meta: { title: 'Gestion des coûts' },
+        },
       ],
     },
     {

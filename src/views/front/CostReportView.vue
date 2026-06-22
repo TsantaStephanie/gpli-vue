@@ -4,6 +4,7 @@ import {
   getAllTicketCosts,
   fetchGlpiTicketCosts,
   computeCostReport,
+  computeReopenBase,
   type TicketCostRecord,
   type CostSource,
 } from '@/services/api/ticketCostService'
@@ -202,13 +203,25 @@ async function load() {
       } catch {}
     }))
 
-    records.value = rawSqlite.map(r => {
+    const enriched = rawSqlite.map(r => {
       const cached = typeCache.get(r.ticketId)
       if (!cached) return r
       let existing: string[] = []
       try { existing = JSON.parse(r.itemTypes || '[]') } catch {}
       if (existing.length) return r
       return { ...r, itemTypes: JSON.stringify(cached), itemCount: cached.length }
+    })
+
+    // Recalculer le fixed_cost des réouvertures à partir de pct+mode en temps réel
+    records.value = enriched.map(r => {
+      if (r.source !== 'reopen' || r.reopenPct == null || r.reopenMode == null) return r
+      // Seulement les kanbans avec id < reopen (existants au moment de l'import)
+      const ticketKanbans = enriched.filter(c => c.ticketId === r.ticketId && c.source === 'kanban' && c.id < r.id)
+      const base = computeReopenBase(ticketKanbans as any, r.reopenMode as 1 | 2 | 3 | 4)
+      if (base == null || base === 0) return r
+      const computed = base * (r.reopenPct / 100)
+      console.log(`[CostReport] réouverture#${r.id} ticket#${r.ticketId} → base=${base} × ${r.reopenPct}% = ${computed} Ar (stocké: ${r.fixedCost})`)
+      return { ...r, fixedCost: computed }
     })
   } finally {
     loading.value = false
@@ -224,8 +237,7 @@ onMounted(load)
     <!-- ── En-tête ──────────────────────────────────────────────── -->
     <div class="cost-header">
       <div>
-        <h1 class="cost-title">Rapport des coûts</h1>
-        <p class="cost-sub">Coûts distribués par type d'actif</p>
+        <h1 class="cost-title">Tableau de bord des couts</h1>
       </div>
       <button class="btn-refresh" @click="load" :disabled="loading">
         <svg :class="{ spin: loading }" width="14" height="14" viewBox="0 0 24 24"

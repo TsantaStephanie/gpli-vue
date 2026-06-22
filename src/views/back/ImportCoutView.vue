@@ -110,6 +110,8 @@ async function insertMvt(
       itemCount:   info.types.length || 1,
       itemTypes:   JSON.stringify(info.types),
       source:      'reopen',
+      reopenPct:   valeur,      // stocker le % pour affichage dans Gestion des coûts
+      reopenMode:  modeNum,
     })
     console.log(`[ImportCout] position ${position} ticket#${info.id} open ${valeur}% (mode ${modeNum}) de base ${base} = ${reopenCost} Ar → OK`)
     return 'success'
